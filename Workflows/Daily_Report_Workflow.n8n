@@ -1,5 +1,10 @@
 {
+  "createdAt": "2026-02-07T17:08:13.622Z",
+  "updatedAt": "2026-02-07T17:08:14.188Z",
+  "id": "PeqoqExvdvxhdHZd",
   "name": "Daily Python Report Workflow",
+  "active": false,
+  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -108,14 +113,69 @@
       ]
     }
   },
-  "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "v1",
-  "id": "PeqoqExvdvxhdHZd",
-  "meta": {
-    "instanceId": "random-id"
-  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "1a282290-a859-4915-8212-a44cc4ae7213",
+  "triggerCount": 0,
+  "shared": [
+    {
+      "createdAt": "2026-02-07T17:08:13.637Z",
+      "updatedAt": "2026-02-07T17:08:13.637Z",
+      "role": "workflow:owner",
+      "workflowId": "PeqoqExvdvxhdHZd",
+      "projectId": "HdWBpWyygCpr2hPz",
+      "project": {
+        "createdAt": "2025-06-04T17:12:06.615Z",
+        "updatedAt": "2025-06-04T17:19:23.175Z",
+        "id": "HdWBpWyygCpr2hPz",
+        "name": "Christopher Gibb <chris@ironcode.io>",
+        "type": "personal",
+        "icon": null,
+        "projectRelations": [
+          {
+            "createdAt": "2025-06-04T17:12:06.615Z",
+            "updatedAt": "2025-06-04T17:12:06.615Z",
+            "role": "project:personalOwner",
+            "userId": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
+            "projectId": "HdWBpWyygCpr2hPz",
+            "user": {
+              "createdAt": "2025-06-04T17:12:05.084Z",
+              "updatedAt": "2026-01-19T09:51:41.708Z",
+              "id": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
+              "email": "chris@ironcode.io",
+              "firstName": "Christopher",
+              "lastName": "Gibb",
+              "personalizationAnswers": {
+                "companyType": "personal",
+                "reportedSource": "friend",
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-06-04T17:19:38.362Z",
+                "personalization_survey_n8n_version": "1.54.4"
+              },
+              "settings": {
+                "userActivated": true,
+                "firstSuccessfulWorkflowId": "o32leWbxq0RNU38m",
+                "userActivatedAt": 1749182444106,
+                "easyAIWorkflowOnboarded": true,
+                "npsSurvey": {
+                  "waitingForResponse": true,
+                  "ignoredCount": 2,
+                  "lastShownAt": 1768816299172
+                }
+              },
+              "role": "global:owner",
+              "disabled": false,
+              "mfaEnabled": false,
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
   "tags": []
 }
