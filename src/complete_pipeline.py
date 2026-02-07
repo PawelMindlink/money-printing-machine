@@ -54,6 +54,52 @@ def normalize_url(url):
     
     return url
 
+def extract_path(url):
+    """
+    Extract just the path portion from URL (without domain).
+    Used for matching GA4 relative URLs with Feed absolute URLs.
+    
+    Examples:
+    - 'bushido-sport.pl/product-pol-5-worek.html' -> '/product-pol-5-worek.html'
+    - '/product-pol-5-worek.html' -> '/product-pol-5-worek.html'
+    - 'https://example.com/path/to/page' -> '/path/to/page'
+    """
+    if pd.isna(url) or url == '':
+        return ''
+    
+    url = str(url).lower().strip()
+    
+    # Remove protocol
+    url = re.sub(r'^https?://', '', url)
+    url = re.sub(r'^www\.', '', url)
+    
+    # Remove query parameters
+    if '?' in url:
+        url = url.split('?')[0]
+    
+    # Extract path (everything after first /)
+    if '/' in url:
+        # Check if starts with domain (no leading /)
+        if not url.startswith('/'):
+            # Has domain, extract path after first /
+            first_slash = url.find('/')
+            path = url[first_slash:]
+        else:
+            # Already starts with /, keep as is
+            path = url
+    else:
+        # No slash at all, return as /url
+        path = '/' + url
+    
+    # Remove trailing slash
+    path = path.rstrip('/')
+    
+    # Ensure starts with /
+    if not path.startswith('/'):
+        path = '/' + path
+    
+    return path
+
 def skip_header_comments(filepath):
     """Skip # comment lines at start of GA4 CSV exports"""
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -140,18 +186,36 @@ def step1_load_landing_pages(brand, input_dir):
     print(f"Loaded {len(lp_df)} landing pages")
     print(f"Columns: {list(lp_df.columns)}")
     
-    # Normalize landing page URLs
-    lp_df['norm_url'] = lp_df['Landing page'].apply(normalize_url)
+    # Find landing page column (different GA4 exports have different names)
+    lp_col_candidates = ['Landing page', 'Landing page + query string', 'landingPage']
+    lp_col = None
+    for col in lp_col_candidates:
+        if col in lp_df.columns:
+            lp_col = col
+            break
+    
+    if lp_col is None:
+        raise ValueError(f"No landing page column found. Available columns: {list(lp_df.columns)}")
+    
+    print(f"Using column: '{lp_col}'")
+    
+    # Extract path from landing page URLs (for matching with Feed)
+    # GA4 uses relative URLs like '/product-pol-347-...'
+    lp_df['path_key'] = lp_df[lp_col].apply(extract_path)
+    
+    # Also keep normalized URL for Meta Ads matching (which uses full URLs)
+    lp_df['norm_url'] = lp_df[lp_col].apply(normalize_url)
     
     # Filter out non-ad pages (login, checkout, etc.)
     excluded_patterns = ['/login', '/checkout', '/payment', '/confirmation', 
-                        '/search', '/cart', '/account', '/register']
+                        '/search', '/cart', '/account', '/register',
+                        '/orderdetails', '/basketedit', '/place-order']
     
     def is_ad_target(url):
         url_lower = str(url).lower()
         return not any(pattern in url_lower for pattern in excluded_patterns)
     
-    lp_df['is_ad_target'] = lp_df['norm_url'].apply(is_ad_target)
+    lp_df['is_ad_target'] = lp_df['path_key'].apply(is_ad_target)
     lp_df = lp_df[lp_df['is_ad_target']].copy()
     
     print(f"After filtering non-ad pages: {len(lp_df)} pages")
@@ -159,7 +223,7 @@ def step1_load_landing_pages(brand, input_dir):
     return lp_df
 
 def step2_join_product_feed(lp_df, brand, input_dir):
-    """Step 2: Join Product Feed by normalized URL"""
+    """Step 2: Join Product Feed by path (handles relative vs absolute URLs)"""
     print(f"\n=== Step 2: Join Product Feed ===")
     
     feed_path = os.path.join(input_dir, brand, 'product_feed.xml')
@@ -167,9 +231,16 @@ def step2_join_product_feed(lp_df, brand, input_dir):
     
     print(f"Loaded {len(feed_df)} products from feed")
     
-    # Join on normalized URL
-    merged = pd.merge(lp_df, feed_df[['norm_url', 'id', 'title', 'price', 'category', 'image_link']], 
-                      on='norm_url', how='left', suffixes=('', '_feed'))
+    # Extract path from Feed URLs (Feed uses absolute URLs like 'bushido-sport.pl/...')
+    feed_df['path_key'] = feed_df['link'].apply(extract_path)
+    
+    # Debug: show sample paths
+    print(f"Sample LP paths: {lp_df['path_key'].head(3).tolist()}")
+    print(f"Sample Feed paths: {feed_df['path_key'].head(3).tolist()}")
+    
+    # Join on path_key (extracted path without domain)
+    merged = pd.merge(lp_df, feed_df[['path_key', 'id', 'title', 'price', 'category', 'image_link']], 
+                      on='path_key', how='left', suffixes=('', '_feed'))
     
     # Mark which pages are product pages (have feed match)
     merged['is_product_page'] = ~merged['id'].isna()
