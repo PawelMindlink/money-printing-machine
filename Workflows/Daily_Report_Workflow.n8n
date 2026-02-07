@@ -1,6 +1,6 @@
 {
   "createdAt": "2026-02-07T17:08:13.622Z",
-  "updatedAt": "2026-02-07T18:45:00.000Z",
+  "updatedAt": "2026-02-07T19:30:00.000Z",
   "id": "PeqoqExvdvxhdHZd",
   "name": "Daily Report - Complete Pipeline",
   "active": false,
@@ -26,37 +26,47 @@
     },
     {
       "parameters": {
-        "command": "python c:/Users/Paweł/Documents/GitHub/Money\\ Printing\\ Machine/src/join_logic_final.py"
+        "jsCode": "// Set brand to process\nconst brands = ['Bushido', 'Iiyama', 'Koszulkowy'];\nreturn brands.map(brand => ({ json: { brand } }));"
       },
-      "id": "execute-python-id",
-      "name": "Run Python Script",
+      "id": "set-brands-id",
+      "name": "Set Brands",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "notes": "Outputs list of brands to process"
+    },
+    {
+      "parameters": {
+        "command": "={{ 'python \"c:/Users/Paweł/Documents/GitHub/Money Printing Machine/src/complete_pipeline.py\" ' + $json.brand }}"
+      },
+      "id": "execute-pipeline-id",
+      "name": "Run Complete Pipeline",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
-      "position": [450, 300],
-      "notes": "Executes join_logic_final.py which: 1) Reads local CSV files, 2) Normalizes URLs, 3) Joins Meta+Feed, 4) Calculates CP with category margins, 5) Saves Landing_Page_Report.csv"
-    },
-    {
-      "parameters": {
-        "filePath": "={{ 'c:/Users/Paweł/Documents/GitHub/Money Printing Machine/Output/' + $json.brand + '/Landing_Page_Report.csv' }}",
-        "options": {}
-      },
-      "id": "read-output-id",
-      "name": "Read Output Report",
-      "type": "n8n-nodes-base.readBinaryFile",
-      "typeVersion": 1,
       "position": [650, 300],
-      "notes": "Reads generated Landing_Page_Report.csv for further processing"
+      "notes": "Runs complete_pipeline.py for each brand: 1) Load GA4 LP, 2) Join Product Feed by path, 3) Enrich with Items, 4) Join Meta Ads, 5) Calculate CP & Priority"
     },
     {
       "parameters": {
-        "jsCode": "// Parse CSV and generate summary\nconst brands = ['Bushido', 'Iiyama', 'Koszulkowy'];\nconst results = [];\n\nfor (const brand of brands) {\n  try {\n    const fs = require('fs');\n    const path = `c:/Users/Paweł/Documents/GitHub/Money Printing Machine/Output/${brand}/Landing_Page_Report.csv`;\n    \n    if (!fs.existsSync(path)) {\n      results.push({ brand, status: 'MISSING', error: 'Report not generated' });\n      continue;\n    }\n    \n    const content = fs.readFileSync(path, 'utf-8');\n    const lines = content.split('\\n').filter(l => l.trim());\n    \n    const lp_count = lines.length - 1; // Exclude header\n    \n    results.push({\n      brand,\n      status: 'SUCCESS',\n      landing_pages_processed: lp_count,\n      report_path: path,\n      timestamp: new Date().toISOString()\n    });\n  } catch (error) {\n    results.push({ brand, status: 'ERROR', error: error.message });\n  }\n}\n\nreturn [{ json: { brands: results, total_brands: brands.length, timestamp: new Date().toISOString() } }];"
+        "jsCode": "// Read and verify output files\nconst brand = $json.brand;\nconst fs = require('fs');\n\nconst mainPath = `c:/Users/Paweł/Documents/GitHub/Money Printing Machine/Output/${brand}/Landing_Page_Final.csv`;\nconst skipPath = `c:/Users/Paweł/Documents/GitHub/Money Printing Machine/Output/${brand}/Produkty_Pominięte.csv`;\n\ntry {\n  const mainExists = fs.existsSync(mainPath);\n  const skipExists = fs.existsSync(skipPath);\n  \n  let mainCount = 0, skipCount = 0;\n  \n  if (mainExists) {\n    const content = fs.readFileSync(mainPath, 'utf-8');\n    mainCount = content.split('\\n').filter(l => l.trim()).length - 1;\n  }\n  \n  if (skipExists) {\n    const content = fs.readFileSync(skipPath, 'utf-8');\n    skipCount = content.split('\\n').filter(l => l.trim()).length - 1;\n  }\n  \n  return [{\n    json: {\n      brand,\n      status: 'SUCCESS',\n      landing_pages: mainCount,\n      skipped_products: skipCount,\n      timestamp: new Date().toISOString()\n    }\n  }];\n} catch (error) {\n  return [{ json: { brand, status: 'ERROR', error: error.message } }];\n}"
       },
-      "id": "summary-node-id",
-      "name": "Generate Summary",
+      "id": "verify-output-id",
+      "name": "Verify Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [850, 300],
-      "notes": "Generates summary of processed landing pages per brand"
+      "notes": "Verifies output files exist and counts products"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate results from all brands\nconst items = $input.all();\nconst results = items.map(item => item.json);\n\nconst summary = {\n  total_brands: results.length,\n  successful: results.filter(r => r.status === 'SUCCESS').length,\n  failed: results.filter(r => r.status === 'ERROR').length,\n  total_landing_pages: results.reduce((sum, r) => sum + (r.landing_pages || 0), 0),\n  brands: results,\n  timestamp: new Date().toISOString()\n};\n\nreturn [{ json: summary }];"
+      },
+      "id": "aggregate-summary-id",
+      "name": "Aggregate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "notes": "Aggregates results from all brand runs into final summary"
     }
   ],
   "connections": {
@@ -64,29 +74,40 @@
       "main": [
         [
           {
-            "node": "Run Python Script",
+            "node": "Set Brands",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Run Python Script": {
+    "Set Brands": {
       "main": [
         [
           {
-            "node": "Read Output Report",
+            "node": "Run Complete Pipeline",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read Output Report": {
+    "Run Complete Pipeline": {
       "main": [
         [
           {
-            "node": "Generate Summary",
+            "node": "Verify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Output": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Summary",
             "type": "main",
             "index": 0
           }
@@ -100,63 +121,6 @@
   "staticData": null,
   "meta": null,
   "pinData": null,
-  "versionId": "4a482290-a859-4915-8212-a44cc4ae7216",
-  "triggerCount": 0,
-  "shared": [
-    {
-      "createdAt": "2026-02-07T17:08:13.637Z",
-      "updatedAt": "2026-02-07T17:08:13.637Z",
-      "role": "workflow:owner",
-      "workflowId": "PeqoqExvdvxhdHZd",
-      "projectId": "HdWBpWyygCpr2hPz",
-      "project": {
-        "createdAt": "2025-06-04T17:12:06.615Z",
-        "updatedAt": "2025-06-04T17:19:23.175Z",
-        "id": "HdWBpWyygCpr2hPz",
-        "name": "Christopher Gibb <chris@ironcode.io>",
-        "type": "personal",
-        "icon": null,
-        "projectRelations": [
-          {
-            "createdAt": "2025-06-04T17:12:06.615Z",
-            "updatedAt": "2025-06-04T17:12:06.615Z",
-            "role": "project:personalOwner",
-            "userId": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
-            "projectId": "HdWBpWyygCpr2hPz",
-            "user": {
-              "createdAt": "2025-06-04T17:12:05.084Z",
-              "updatedAt": "2026-01-19T09:51:41.708Z",
-              "id": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
-              "email": "chris@ironcode.io",
-              "firstName": "Christopher",
-              "lastName": "Gibb",
-              "personalizationAnswers": {
-                "companyType": "personal",
-                "reportedSource": "friend",
-                "version": "v4",
-                "personalization_survey_submitted_at": "2025-06-04T17:19:38.362Z",
-                "personalization_survey_n8n_version": "1.54.4"
-              },
-              "settings": {
-                "userActivated": true,
-                "firstSuccessfulWorkflowId": "o32leWbxq0RNU38m",
-                "userActivatedAt": 1749182444106,
-                "easyAIWorkflowOnboarded": true,
-                "npsSurvey": {
-                  "waitingForResponse": true,
-                  "ignoredCount": 2,
-                  "lastShownAt": 1768816299172
-                }
-              },
-              "role": "global:owner",
-              "disabled": false,
-              "mfaEnabled": false,
-              "isPending": false
-            }
-          }
-        ]
-      }
-    }
-  ],
-  "tags": []
+  "versionId": "5b593401-b960-5026-9323-b55dd5bf8327",
+  "triggerCount": 0
 }
