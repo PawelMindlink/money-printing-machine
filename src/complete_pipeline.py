@@ -98,6 +98,10 @@ def extract_path(url):
     if not path.startswith('/'):
         path = '/' + path
     
+    # Normalize HTML extensions (Feed uses .facebookads.html, LP uses .html)
+    path = path.replace('.facebookads.html', '.html')
+    path = path.replace('.facebook.html', '.html')
+    
     return path
 
 def skip_header_comments(filepath):
