@@ -1,5 +1,5 @@
 {
-    "schema_version": "1.0",
+    "schema_version": "2.0",
     "tier_rules": {
         "ga4": {
             "star": {
@@ -25,22 +25,50 @@
     },
     "clients": [
         {
-            "name": "Brand_A",
+            "name": "Bushido",
             "vat_rate": 0.23,
+            "frequency_rate": 1.0,
             "margin_config": {
-                "default_rate": 0.50,
+                "default_rate": 0.23,
                 "category_overrides": [
                     {
-                        "category": "Category_1",
+                        "category": "high_margin",
+                        "rate": 0.58
+                    },
+                    {
+                        "category": "standard",
+                        "rate": 0.23
+                    }
+                ]
+            }
+        },
+        {
+            "name": "Iiyama",
+            "vat_rate": 0.23,
+            "frequency_rate": 1.0,
+            "margin_config": {
+                "default_rate": 0.10,
+                "category_overrides": [
+                    {
+                        "category": "monitors",
                         "rate": 0.10
                     },
                     {
-                        "category": "Category_2",
+                        "category": "accessories",
                         "rate": 0.15
                     }
                 ]
             }
+        },
+        {
+            "name": "Koszulkowy",
+            "vat_rate": 0.23,
+            "frequency_rate": 1.0,
+            "margin_config": {
+                "default_rate": 0.45,
+                "category_overrides": []
+            }
         }
     ],
-    "note": "To add a real client, append its configuration to the 'clients' list above. The key is to match 'category' from input data to 'category' in overrides."
+    "note": "Each client has unique margin categories. Match 'category' from product data to 'category' in overrides. If no match, use default_rate."
 }
