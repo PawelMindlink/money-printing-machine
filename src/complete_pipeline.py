@@ -1,440 +1,321 @@
-#!/usr/bin/env python3
-"""
-Complete 5-Step Data Pipeline
-
-Based on Zuzia conversation transcript, the true flow is:
-
-Step 1: Load GA4 Landing Page (base layer - URL level data)
-Step 2: Join Product Feed by normalized URL → adds item_id, item_name, category, price
-Step 3: Enrich with GA4 Item Breakdown using item_id from feed → adds item-level metrics
-Step 4: Join aggregated Meta Ads data by normalized URL → adds spend, revenue per URL
-Step 5: Calculate metrics (CP, Frequency) and assign Priority P1-P8
-
-This script runs the complete pipeline for one brand.
-"""
-
 import pandas as pd
-import sys
 import os
 import re
 import xml.etree.ElementTree as ET
+from io import StringIO
+import sys
+import json
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from ga4_api_client import fetch_ga4_data
+
+# HARDCODED PATH TO CREDENTIALS (for n8n/local execution) - Overridable via Env Var
+GA4_CREDS_PATH = os.environ.get("GA4_CREDS_PATH", r"c:\Users\Paweł\Documents\GitHub\ICP Research\Core\Configs\ga4_credentials.json")
 
 # ============================================================================
-# UTILITY FUNCTIONS
+# UTILS
 # ============================================================================
 
 def normalize_url(url):
-    """
-    Normalize URL by:
-    - Removing protocol (http/https)
-    - Removing www.
-    - Removing trailing slash
-    - Removing UTM parameters
-    - Converting to lowercase
-    """
+    """Normalize URL for matching"""
     if pd.isna(url) or url == '':
         return ''
-    
     url = str(url).lower().strip()
-    
-    # Remove protocol
     url = re.sub(r'^https?://', '', url)
-    
-    # Remove www.
     url = re.sub(r'^www\.', '', url)
-    
-    # Parse and remove query parameters (UTMs)
     if '?' in url:
         url = url.split('?')[0]
-    
-    # Remove trailing slash
-    url = url.rstrip('/')
-    
-    return url
+    return url.rstrip('/')
 
 def extract_path(url):
-    """
-    Extract just the path portion from URL (without domain).
-    Used for matching GA4 relative URLs with Feed absolute URLs.
-    
-    Examples:
-    - 'bushido-sport.pl/product-pol-5-worek.html' -> '/product-pol-5-worek.html'
-    - '/product-pol-5-worek.html' -> '/product-pol-5-worek.html'
-    - 'https://example.com/path/to/page' -> '/path/to/page'
-    """
+    """Extract path from URL for relative matching"""
     if pd.isna(url) or url == '':
         return ''
-    
     url = str(url).lower().strip()
-    
-    # Remove protocol
     url = re.sub(r'^https?://', '', url)
     url = re.sub(r'^www\.', '', url)
-    
-    # Remove query parameters
     if '?' in url:
         url = url.split('?')[0]
     
-    # Extract path (everything after first /)
     if '/' in url:
-        # Check if starts with domain (no leading /)
         if not url.startswith('/'):
-            # Has domain, extract path after first /
-            first_slash = url.find('/')
-            path = url[first_slash:]
+            path = url[url.find('/'):]
         else:
-            # Already starts with /, keep as is
             path = url
     else:
-        # No slash at all, return as /url
         path = '/' + url
-    
-    # Remove trailing slash
+        
     path = path.rstrip('/')
-    
-    # Ensure starts with /
     if not path.startswith('/'):
         path = '/' + path
-    
-    # Normalize HTML extensions (Feed uses .facebookads.html, LP uses .html)
+        
+    # Standardize HTML extensions
     path = path.replace('.facebookads.html', '.html')
     path = path.replace('.facebook.html', '.html')
-    
     return path
 
-def skip_header_comments(filepath):
-    """Skip # comment lines at start of GA4 CSV exports"""
+def load_ga4_csv(filepath):
+    """Load GA4 CSV by dynamically finding the header row"""
+    if not os.path.exists(filepath):
+        print(f"File not found: {filepath}")
+        return pd.DataFrame()
+        
     with open(filepath, 'r', encoding='utf-8') as f:
         lines = f.readlines()
-    
-    start_idx = 0
-    for i, line in enumerate(lines):
-        if not line.startswith('#'):
-            start_idx = i
-            break
-    
-    return ''.join(lines[start_idx:])
-
-def load_ga4_csv(filepath):
-    """Load GA4 CSV, skipping header comments and Grand Total row"""
-    from io import StringIO
-    csv_content = skip_header_comments(filepath)
-    
-    # Remove Grand Total row BEFORE parsing by Pandas
-    # This row has empty first column which shifts all data
-    lines = csv_content.strip().split('\n')
-    filtered_lines = []
-    
-    for i, line in enumerate(lines):
-        # Keep header
-        if i == 0:
-            filtered_lines.append(line)
-            continue
         
-        # Skip if any cell contains "Grand total" (case insensitive)
-        if 'grand total' not in line.lower():
-            filtered_lines.append(line)
+    header_idx = -1
+    keywords = ['Item name', 'Item ID', 'Landing page', 'landingPage', 'Page path']
     
-    # Parse with Pandas
-    df = pd.read_csv(StringIO('\n'.join(filtered_lines)))
+    for i, line in enumerate(lines):
+        if any(kw in line for kw in keywords):
+            header_idx = i
+            break
+            
+    if header_idx == -1:
+        for i, line in enumerate(lines):
+            if not line.strip().startswith('#') and line.strip() != '':
+                header_idx = i
+                break
+                
+    if header_idx == -1:
+        return pd.DataFrame()
+
+    header_line = lines[header_idx]
+    data_lines = lines[header_idx+1:]
     
-    # Additional cleanup - remove rows with empty first column value
-    first_col = df.columns[0]
-    df = df[df[first_col].notna()].copy()
-    df = df[df[first_col].astype(str).str.strip() != ''].copy()
+    filtered_data = []
+    for line in data_lines:
+        clean_line = line.strip()
+        if clean_line and not any(total_marker in clean_line.lower() for total_marker in ['grand total', 'total']):
+            filtered_data.append(line)
+            
+    csv_str = header_line + ''.join(filtered_data)
+    df = pd.read_csv(StringIO(csv_str))
     
+    if not df.empty:
+        first_col = df.columns[0]
+        df = df[df[first_col].notna()].copy()
+        
     return df
 
 def parse_product_feed_xml(filepath):
-    """Parse Facebook Product Feed XML"""
+    """Parse Facebook/Google Product Feed XML"""
+    if not os.path.exists(filepath):
+        return pd.DataFrame()
+        
     tree = ET.parse(filepath)
     root = tree.getroot()
+    ns = {'g': 'http://base.google.com/ns/1.0'}
     
-    # Facebook feed uses RSS format with <item> entries
     products = []
-    
     for item in root.findall('.//item'):
-        product = {}
+        p = {
+            'id': item.findtext('g:id', namespaces=ns),
+            'title': item.findtext('g:title', namespaces=ns) or item.findtext('title'),
+            'link': item.findtext('g:link', namespaces=ns) or item.findtext('link'),
+            'category': item.findtext('g:google_product_category', namespaces=ns),
+            'price': item.findtext('g:price', namespaces=ns)
+        }
+        p['norm_url'] = normalize_url(p['link'])
+        p['path_key'] = extract_path(p['link'])
+        products.append(p)
         
-        # Extract fields (namespaced with g: for Google Shopping)
-        ns = {'g': 'http://base.google.com/ns/1.0'}
-        
-        product['id'] = item.findtext('g:id', default='', namespaces=ns)
-        product['title'] = item.findtext('g:title', default='', namespaces=ns) or item.findtext('title', default='')
-        product['link'] = item.findtext('g:link', default='', namespaces=ns) or item.findtext('link', default='')
-        product['description'] = item.findtext('g:description', default='', namespaces=ns)
-        product['price'] = item.findtext('g:price', default='', namespaces=ns)
-        product['image_link'] = item.findtext('g:image_link', default='', namespaces=ns)
-        product['category'] = item.findtext('g:google_product_category', default='', namespaces=ns)
-        
-        # Normalize URL
-        product['norm_url'] = normalize_url(product['link'])
-        
-        products.append(product)
-    
     return pd.DataFrame(products)
 
 # ============================================================================
-# PIPELINE STEPS
+# PIPELINE - FEED-FIRST APPROACH
 # ============================================================================
 
-def step1_load_landing_pages(brand, input_dir):
-    """Step 1: Load GA4 Landing Page report (base layer)"""
-    print(f"\n=== Step 1: Load Landing Page Report ===")
+def run_pipeline(brand, input_dir, output_dir, full_config):
+    print(f"\n>>> Running Optimized Pipeline for: {brand}")
+    brand_l = brand.lower()
     
-    lp_path = os.path.join(input_dir, brand, 'ga4_lp.csv')
-    lp_df = load_ga4_csv(lp_path)
+    # 1. Get Brand Setup
+    clients_list = full_config.get('clients', [])
+    config = next((c for c in clients_list if c['name'].lower() == brand.lower()), {})
+    if not config:
+        print(f"Error: Brand configuration for {brand} not found in business_logic.json!")
+        return None
     
-    print(f"Loaded {len(lp_df)} landing pages")
-    print(f"Columns: {list(lp_df.columns)}")
-    
-    # Find landing page column (different GA4 exports have different names)
-    lp_col_candidates = ['Landing page', 'Landing page + query string', 'landingPage']
-    lp_col = None
-    for col in lp_col_candidates:
-        if col in lp_df.columns:
-            lp_col = col
-            break
-    
-    if lp_col is None:
-        raise ValueError(f"No landing page column found. Available columns: {list(lp_df.columns)}")
-    
-    print(f"Using column: '{lp_col}'")
-    
-    # Extract path from landing page URLs (for matching with Feed)
-    # GA4 uses relative URLs like '/product-pol-347-...'
-    lp_df['path_key'] = lp_df[lp_col].apply(extract_path)
-    
-    # Also keep normalized URL for Meta Ads matching (which uses full URLs)
-    lp_df['norm_url'] = lp_df[lp_col].apply(normalize_url)
-    
-    # Filter out non-ad pages (login, checkout, etc.)
-    excluded_patterns = ['/login', '/checkout', '/payment', '/confirmation', 
-                        '/search', '/cart', '/account', '/register',
-                        '/orderdetails', '/basketedit', '/place-order']
-    
-    def is_ad_target(url):
-        url_lower = str(url).lower()
-        return not any(pattern in url_lower for pattern in excluded_patterns)
-    
-    lp_df['is_ad_target'] = lp_df['path_key'].apply(is_ad_target)
-    lp_df = lp_df[lp_df['is_ad_target']].copy()
-    
-    print(f"After filtering non-ad pages: {len(lp_df)} pages")
-    
-    return lp_df
+    tier_rules = full_config.get('tier_rules', {}).get('ga4', {})
 
-def step2_join_product_feed(lp_df, brand, input_dir):
-    """Step 2: Join Product Feed by path (handles relative vs absolute URLs)"""
-    print(f"\n=== Step 2: Join Product Feed ===")
-    
-    feed_path = os.path.join(input_dir, brand, 'product_feed.xml')
-    feed_df = parse_product_feed_xml(feed_path)
-    
-    print(f"Loaded {len(feed_df)} products from feed")
-    
-    # Extract path from Feed URLs (Feed uses absolute URLs like 'bushido-sport.pl/...')
-    feed_df['path_key'] = feed_df['link'].apply(extract_path)
-    
-    # Debug: show sample paths
-    print(f"Sample LP paths: {lp_df['path_key'].head(3).tolist()}")
-    print(f"Sample Feed paths: {feed_df['path_key'].head(3).tolist()}")
-    
-    # Join on path_key (extracted path without domain)
-    merged = pd.merge(lp_df, feed_df[['path_key', 'id', 'title', 'price', 'category', 'image_link']], 
-                      on='path_key', how='left', suffixes=('', '_feed'))
-    
-    # Mark which pages are product pages (have feed match)
-    merged['is_product_page'] = ~merged['id'].isna()
-    
-    print(f"Product pages: {merged['is_product_page'].sum()} / {len(merged)}")
-    
-    return merged
+    # 2. Load Feed
+    feed_path = os.path.join(input_dir, brand, f"{brand_l}_product_feed.xml")
+    df = parse_product_feed_xml(feed_path)
+    if df.empty:
+        print(f"Error: Feed not found at {feed_path}")
+        return None
+    print(f"Loaded {len(df)} products from Feed")
 
-def step3_enrich_with_items(merged_df, brand, input_dir):
-    """Step 3: Enrich with GA4 Item Breakdown using item_id"""
-    print(f"\n=== Step 3: Enrich with Item Breakdown ===")
-    
-    items_path = os.path.join(input_dir, brand, 'ga4_items.csv')
-    items_df = load_ga4_csv(items_path)
-    
-    print(f"Loaded {len(items_df)} items")
-    
-    # Join on Item ID (from product feed)
-    # Note: Item ID in feed might be string, in GA4 might be different format
-    items_df['Item ID'] = items_df['Item ID'].astype(str)
-    merged_df['id'] = merged_df['id'].astype(str)
-    
-    enriched = pd.merge(merged_df, items_df[['Item ID', 'Items viewed', 'Items purchased', 'Item revenue']],
-                       left_on='id', right_on='Item ID', how='left')
-    
-    print(f"Enriched with item-level metrics")
-    
-    return enriched
+    # 3. Enrich with Items (Metric Depth)
+    items_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_items_freeform.csv")
+    if not os.path.exists(items_path):
+        items_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_items.csv")
+        
+    if os.path.exists(items_path):
+        items_df = load_ga4_csv(items_path)
+        items_df['Item ID'] = items_df['Item ID'].astype(str)
+        def get_clean_id(id_val):
+            return str(id_val).split('-')[0].split('.')[0]
+        items_df['Clean ID'] = items_df['Item ID'].apply(get_clean_id)
+        df['id'] = df['id'].astype(str)
+        
+        items_agg = items_df.groupby('Clean ID').agg({
+            'Items viewed': 'sum',
+            'Items purchased': 'sum',
+            'Item revenue': 'sum'
+        }).reset_index()
+        
+        df = pd.merge(df, items_agg, left_on='id', right_on='Clean ID', how='left')
+        print(f"Enriched with GA4 Items (Match: {df['Clean ID'].notna().sum()})")
 
-def step4_join_meta_ads(enriched_df, brand, input_dir):
-    """Step 4: Join aggregated Meta Ads data"""
-    print(f"\n=== Step 4: Join Meta Ads (Aggregated) ===")
+    # 4. Enrich with Landing Pages (Session Depth - Hybrid API/CSV)
+    lp_df = pd.DataFrame()
+    ga4_source = "CSV"
     
-    meta_path = os.path.join(input_dir, brand, 'meta_ads.csv')
-    meta_df = pd.read_csv(meta_path)
-    
-    # Normalize URLs in Meta Ads
-    meta_df['norm_url'] = meta_df['Link (ad settings)'].apply(normalize_url)
-    
-    # Aggregate by landing page
-    meta_agg = meta_df.groupby('norm_url').agg({
-        'Amount spent (PLN)': 'sum',
-        'Purchases': 'sum',
-        'Purchases conversion value': 'sum'
-    }).reset_index()
-    
-    meta_agg.columns = ['norm_url', 'meta_spend', 'meta_purchases', 'meta_revenue']
-    
-    print(f"Aggregated Meta Ads to {len(meta_agg)} landing pages")
-    
-    # Join with main data
-    final = pd.merge(enriched_df, meta_agg, on='norm_url', how='left')
-    
-    # Mark Meta Ads status
-    final['has_meta_ads'] = ~final['meta_spend'].isna()
-    
-    print(f"Pages with Meta Ads: {final['has_meta_ads'].sum()} / {len(final)}")
-    
-    return final
+    # Try API if Property ID exists
+    prop_id = config.get('ga4_property_id')
+    if prop_id and os.path.exists(GA4_CREDS_PATH):
+        try:
+            print(f"Fetching GA4 Data via API (Property: {prop_id})...")
+            # Limit 100k rows to cover Koszulkowy case
+            lp_df = fetch_ga4_data(GA4_CREDS_PATH, prop_id, limit=100000)
+            if not lp_df.empty:
+                ga4_source = "API"
+        except Exception as e:
+            print(f"API Fetch Failed: {e}. Falling back to CSV.")
+            
+    # Fallback to CSV if API failed or not configured
+    if lp_df.empty:
+        lp_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_lp_freeform.csv")
+        if not os.path.exists(lp_path):
+            lp_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_lp.csv")
+            
+        if os.path.exists(lp_path):
+            print(f"Loading GA4 LP from CSV: {lp_path}")
+            lp_df = load_ga4_csv(lp_path)
+            
+    # Process if data loaded
+    if not lp_df.empty:
+        lp_col = next((c for c in ['Landing page', 'Landing page + query string', 'landingPage'] if c in lp_df.columns), None)
+        
+        if lp_col:
+            lp_df['path_key'] = lp_df[lp_col].apply(extract_path)
+            # Ensure numeric columns for aggregation
+            cols_to_sum = ['Sessions', 'Purchases', 'First time purchasers']
+            for c in cols_to_sum:
+                if c not in lp_df.columns:
+                    lp_df[c] = 0
+                else:
+                    lp_df[c] = pd.to_numeric(lp_df[c], errors='coerce').fillna(0)
+                    
+            lp_agg = lp_df.groupby('path_key')[cols_to_sum].sum().reset_index()
+            
+            df = pd.merge(df, lp_agg, on='path_key', how='left')
+            print(f"Enriched with GA4 Sessions ({ga4_source}, Match: {df['Sessions'].notna().sum()})")
+    else:
+        print("Warning: No GA4 Data loaded (API or CSV).")
 
-def step5_calculate_metrics(final_df, brand_config):
-    """Step 5: Calculate metrics and assign priorities"""
-    print(f"\n=== Step 5: Calculate Metrics & Priority ===")
+    # 5. Join Meta Ads
+    meta_path = os.path.join(input_dir, brand, f"{brand_l}_meta_ads.csv")
+    if os.path.exists(meta_path):
+        meta_df = pd.read_csv(meta_path)
+        meta_df['norm_url'] = meta_df['Link (ad settings)'].apply(normalize_url)
+        meta_agg = meta_df.groupby('norm_url').agg({
+            'Amount spent (PLN)': 'sum',
+            'Purchases': 'sum',
+            'Purchases conversion value': 'sum'
+        }).reset_index()
+        meta_agg.columns = ['norm_url', 'meta_spend', 'meta_purchases', 'meta_revenue']
+        df = pd.merge(df, meta_agg, on='norm_url', how='left')
+        print(f"Enriched with Meta Ads (Match: {df['meta_spend'].notna().sum()})")
+
+    # 6. CALCULATIONS & CLASSIFICATION
+    vat = config.get('vat_rate', 0.23)
+    margin_cfg = config.get('margin_config', {})
+    default_margin = margin_cfg.get('default_rate', 0.1) # Fallback to 10% if totally missing
+    category_overrides = margin_cfg.get('category_overrides', [])
     
-    # Get brand-specific config
-    vat_rate = brand_config.get('vat_rate', 0.23)
-    default_margin = brand_config.get('default_margin', 0.30)
+    # Calculate Frequency (Transactions / First time purchasers)
+    # Using LP purchases as primary transaction source for frequency calculation
+    df['calc_frequency'] = df['Purchases'].fillna(0) / df['First time purchasers'].replace(0, 1)
     
-    # Calculate Frequency
-    final_df['frequency'] = final_df['Purchases'] / final_df['First time purchasers'].replace(0, 1)
-    
-    # Get margin (from category or default)
+    # Apply Margin Mapping
     def get_margin(row):
-        # TODO: Implement category-specific margins from business_logic.json
+        cat = str(row['category']).lower()
+        for override in category_overrides:
+            if override['category'].lower() in cat:
+                return override['rate']
         return default_margin
+
+    df['gross_margin'] = df.apply(get_margin, axis=1)
     
-    final_df['gross_margin'] = final_df.apply(lambda x: default_margin, axis=1)
-    
-    # Calculate Contribution Profit
-    # CP = (Meta_Revenue / (1 + VAT) * Margin * Frequency) - Ad_Spend
-    final_df['net_revenue'] = final_df['meta_revenue'] / (1 + vat_rate)
-    final_df['contribution_profit'] = (
-        final_df['net_revenue'] * final_df['gross_margin'] * final_df['frequency']
-    ) - final_df['meta_spend']
+    # CP = (Purch_Conv_Val / (1 + VAT) * Margin * Frequency) - Ad_Spend
+    df['contribution_profit'] = (
+        (df['meta_revenue'].fillna(0) / (1+vat)) * df['gross_margin'] * df['calc_frequency']
+    ) - df['meta_spend'].fillna(0)
     
     # Meta Ads Classification
-    def meta_classification(row):
-        if pd.isna(row['meta_spend']) or row['meta_spend'] == 0:
-            return 'No Ads'
-        elif row['contribution_profit'] > 0:
-            return 'Profitable'
-        else:
-            return 'Unprofitable'
+    def get_meta_class(row):
+        if pd.isna(row['meta_spend']) or row['meta_spend'] == 0: return 'No Ads'
+        return 'Profitable' if row['contribution_profit'] > 0 else 'Unprofitable'
     
-    final_df['meta_class'] = final_df.apply(meta_classification, axis=1)
+    df['meta_class'] = df.apply(get_meta_class, axis=1)
     
-    # GA4 Classification (simplified for now - needs full BCG logic)
-    # TODO: Implement proper Star/Cash Cow/Hidden Gem/Slacker classification
-    final_df['ga4_class'] = 'Star'  # Placeholder
+    # GA4 Classification (BCG)
+    def get_ga4_class(row):
+        revenue = row['Item revenue'] if not pd.isna(row['Item revenue']) else 0
+        freq = row['calc_frequency']
+        
+        for tier, rules in tier_rules.items():
+            r_min = rules.get('revenue_min', 0)
+            r_max = rules.get('revenue_max', float('inf'))
+            f_min = rules.get('frequency_min', 0)
+            f_max = rules.get('frequency_max', float('inf'))
+            
+            if r_min <= revenue <= r_max and f_min <= freq <= f_max:
+                return tier.replace('_', ' ').title()
+        
+        return 'Slacker' # Final fallback
+        
+    df['ga4_class'] = df.apply(get_ga4_class, axis=1)
     
-    # Priority assignment (based on Priority Matrix)
-    def assign_priority(row):
+    # Priority Assignment (P1-P8)
+    def get_priority(row):
         ga4 = row['ga4_class']
         meta = row['meta_class']
         
-        if ga4 == 'Star' and meta == 'Profitable':
-            return 'P1'
-        elif ga4 == 'Cash Cow' and meta == 'Profitable':
-            return 'P2'
-        elif ga4 == 'Hidden Gem' and meta == 'Profitable':
-            return 'P3'
-        elif ga4 == 'Star' and meta in ['No Ads', 'Unprofitable']:
-            return 'P4'
-        elif ga4 == 'Cash Cow' and meta in ['No Ads', 'Unprofitable']:
-            return 'P5'
-        elif ga4 == 'Hidden Gem' and meta == 'No Ads':
-            return 'P6'
-        elif ga4 in ['Ignore', 'Slacker'] and meta == 'Profitable':
-            return 'P7'
-        else:
-            return 'P8'
-    
-    final_df['priority'] = final_df.apply(assign_priority, axis=1)
-    
-    print(f"\nPriority Distribution:")
-    print(final_df['priority'].value_counts().sort_index())
-    
-    return final_df
+        if ga4 == 'Star' and meta == 'Profitable': return 'P1'
+        if ga4 == 'Cash Cow' and meta == 'Profitable': return 'P2'
+        if ga4 == 'Hidden Gem' and meta == 'Profitable': return 'P3'
+        if ga4 == 'Star' and meta in ['No Ads', 'Unprofitable']: return 'P4'
+        if ga4 == 'Cash Cow' and meta in ['No Ads', 'Unprofitable']: return 'P5'
+        if ga4 == 'Hidden Gem' and meta == 'No Ads': return 'P6'
+        if ga4 in ['Ignore', 'Slacker'] and meta == 'Profitable': return 'P7'
+        return 'P8'
 
-# ============================================================================
-# MAIN PIPELINE
-# ============================================================================
-
-def run_complete_pipeline(brand, input_dir, output_dir, brand_config):
-    """Run complete 5-step pipeline"""
-    print(f"\n{'='*60}")
-    print(f"COMPLETE PIPELINE FOR {brand}")
-    print(f"{'='*60}")
+    df['priority'] = df.apply(get_priority, axis=1)
     
-    # Step 1: Load Landing Pages
-    lp_df = step1_load_landing_pages(brand, input_dir)
+    # Save Results
+    out_dir = os.path.join(output_dir, brand)
+    os.makedirs(out_dir, exist_ok=True)
+    df.to_csv(os.path.join(out_dir, "Landing_Page_Final.csv"), index=False)
     
-    # Step 2: Join Product Feed
-    merged_df = step2_join_product_feed(lp_df, brand, input_dir)
+    skipped = df[df['priority'] == 'P8']
+    skipped.to_csv(os.path.join(out_dir, "Produkty_Pominięte.csv"), index=False)
     
-    # Step 3: Enrich with Items
-    enriched_df = step3_enrich_with_items(merged_df, brand, input_dir)
-    
-    # Step 4: Join Meta Ads
-    final_df = step4_join_meta_ads(enriched_df, brand, input_dir)
-    
-    # Step 5: Calculate Metrics
-    final_df = step5_calculate_metrics(final_df, brand_config)
-    
-    # Save outputs
-    output_path = os.path.join(output_dir, brand, 'Landing_Page_Final.csv')
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-    # Main output (P1-P7)
-    main_output = final_df[final_df['priority'] != 'P8'].copy()
-    main_output.to_csv(output_path, index=False)
-    
-    # P8 products (skipped)
-    p8_output_path = os.path.join(output_dir, brand, 'Produkty_Pominięte.csv')
-    p8_output = final_df[final_df['priority'] == 'P8'].copy()
-    p8_output.to_csv(p8_output_path, index=False)
-    
-    print(f"\n[OK] PIPELINE COMPLETE")
-    print(f"   Main output: {output_path} ({len(main_output)} products)")
-    print(f"   Skipped (P8): {p8_output_path} ({len(p8_output)} products)")
-    
-    return final_df
+    return df
 
 if __name__ == "__main__":
-    BASE_DIR = r"c:\Users\Paweł\Documents\GitHub\Money Printing Machine"
-    INPUT_DIR = os.path.join(BASE_DIR, "Input")
-    OUTPUT_DIR = os.path.join(BASE_DIR, "Output")
+    if len(sys.argv) < 2:
+        print("Usage: python complete_pipeline.py <BrandName>")
+        sys.exit(1)
+        
+    brand = sys.argv[1]
+    config_path = 'business_logic.json'
     
-    brand = sys.argv[1] if len(sys.argv) > 1 else "Bushido"
-    
-    # Load brand config
-    import json
-    config_path = os.path.join(BASE_DIR, "business_logic.json")
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config_data = json.load(f)
-        brand_configs = {c['name']: c for c in config_data['clients']}
-    
-    brand_config = brand_configs.get(brand, {
-        'vat_rate': 0.23,
-        'default_margin': 0.30
-    })
-    
-    result = run_complete_pipeline(brand, INPUT_DIR, OUTPUT_DIR, brand_config)
+    if os.path.exists(config_path):
+        with open(config_path, 'r', encoding='utf-8') as f:
+            full_cfg = json.load(f)
+        run_pipeline(brand, "Input", "Output", full_cfg)
+    else:
+        print(f"Error: {config_path} not found!")

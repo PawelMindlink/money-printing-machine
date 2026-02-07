@@ -1,5 +1,5 @@
 {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "tier_rules": {
         "ga4": {
             "star": {
@@ -14,7 +14,7 @@
                 "frequency_min": 1.5,
                 "revenue_max": 5000
             },
-            "ignore": {
+            "slacker": {
                 "frequency_max": 1.5,
                 "revenue_max": 10000
             }
@@ -26,17 +26,17 @@
     "clients": [
         {
             "name": "Bushido",
+            "ga4_property_id": "297192186",
             "vat_rate": 0.23,
-            "frequency_rate": 1.0,
             "margin_config": {
-                "default_rate": 0.23,
+                "default_rate": 0.58,
                 "category_overrides": [
                     {
-                        "category": "high_margin",
-                        "rate": 0.58
+                        "category": "worek",
+                        "rate": 0.23
                     },
                     {
-                        "category": "standard",
+                        "category": "worki treningowe",
                         "rate": 0.23
                     }
                 ]
@@ -44,17 +44,49 @@
         },
         {
             "name": "Iiyama",
+            "ga4_property_id": "280127077",
             "vat_rate": 0.23,
-            "frequency_rate": 1.0,
             "margin_config": {
                 "default_rate": 0.10,
                 "category_overrides": [
                     {
-                        "category": "monitors",
+                        "category": "desktop monitors",
                         "rate": 0.10
                     },
                     {
+                        "category": "gaming monitors",
+                        "rate": 0.10
+                    },
+                    {
+                        "category": "signage displays",
+                        "rate": 0.10
+                    },
+                    {
+                        "category": "open frame touchscreens",
+                        "rate": 0.15
+                    },
+                    {
+                        "category": "unified communication",
+                        "rate": 0.15
+                    },
+                    {
                         "category": "accessories",
+                        "rate": 0.15
+                    },
+                    {
+                        "category": "ifp",
+                        "rate": 0.15
+                    },
+                    {
+                        "category": "interactive",
+                        "rate": 0.15
+                    },
+                    {
+                        "category": "touchscreen monitors",
+                        "rate": 0.15
+                    },
+                    {
+                        "category": "android touch displays",
                         "rate": 0.15
                     }
                 ]
@@ -62,13 +94,13 @@
         },
         {
             "name": "Koszulkowy",
+            "ga4_property_id": "270928705",
             "vat_rate": 0.23,
-            "frequency_rate": 1.0,
             "margin_config": {
                 "default_rate": 0.45,
                 "category_overrides": []
             }
         }
     ],
-    "note": "Each client has unique margin categories. Match 'category' from product data to 'category' in overrides. If no match, use default_rate."
+    "note": "Bushido: 23% for training bags, 58% for all other products. Iiyama: 10% for monitors/signage, 15% for touchscreens/accessories. Koszulkowy: flat 45%."
 }
