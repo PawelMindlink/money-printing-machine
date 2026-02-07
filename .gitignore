@@ -1,0 +1,11 @@
+# Data Inputs (Confidential)
+Input/
+Output/
+.env
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+env/
