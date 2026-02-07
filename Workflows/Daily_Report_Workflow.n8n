@@ -1,6 +1,6 @@
 {
   "createdAt": "2026-02-07T17:08:13.622Z",
-  "updatedAt": "2026-02-07T17:08:14.188Z",
+  "updatedAt": "2026-02-07T18:31:00.000Z",
   "id": "PeqoqExvdvxhdHZd",
   "name": "Daily Python Report Workflow",
   "active": false,
@@ -21,61 +21,106 @@
       "name": "Schedule Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [
-        400,
-        300
-      ]
+      "position": [250, 300],
+      "notes": "Runs daily at 06:00 AM"
     },
     {
       "parameters": {
-        "fileId": "YOUR_FILE_ID_HERE",
-        "options": {}
+        "operation": "list",
+        "folderId": {
+          "__rl": true,
+          "value": "root",
+          "mode": "list"
+        },
+        "filter": {
+          "foldersOnly": false,
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        "options": {
+          "fields": "id,name,modifiedTime"
+        }
       },
-      "id": "gdrive-download-id",
-      "name": "Download GDrive File",
+      "id": "gdrive-list-id",
+      "name": "List Input Files",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
-      "position": [
-        600,
-        300
-      ],
+      "position": [450, 300],
       "credentials": {
         "googleDriveOAuth2Api": {
           "id": "ixvQMToaVB8lHBHE",
           "name": "Google Drive account"
         }
-      }
-    },
-    {
-      "parameters": {
-        "command": "python3 {{ $env.PROJECT_ROOT }}/landing_page_final_generator.py"
       },
-      "id": "execute-command-id",
-      "name": "Execute Python Script",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [
-        800,
-        300
-      ]
+      "notes": "Lists available input files from GDrive"
     },
     {
       "parameters": {
-        "url": "YOUR_GOOGLE_CHAT_WEBHOOK_URL",
-        "sendBinaryData": false,
-        "options": {},
-        "headerParametersUi": {
-          "parameter": []
-        }
+        "jsCode": "// Process GA4 + Meta data and calculate Contribution Profit\nconst items = $input.all();\n\n// Business logic from business_logic.json\nconst config = {\n  vat_rate: 0.23,\n  margin_percent: 0.30,\n  frequency_rate: 1.0\n};\n\n// Map over items and compute CP\nconst results = items.map(item => {\n  const data = item.json;\n  \n  // CP = (Revenue / (1 + VAT) * Margin * Frequency) - Ad_Spend\n  const revenue = parseFloat(data.meta_revenue || 0);\n  const adSpend = parseFloat(data.ad_spend || 0);\n  \n  const cp = (revenue / (1 + config.vat_rate) * config.margin_percent * config.frequency_rate) - adSpend;\n  \n  return {\n    json: {\n      ...data,\n      contribution_profit: cp.toFixed(2),\n      is_profitable: cp > 0,\n      tier: cp < 0 ? 'P8' : (cp > 100 ? 'P1' : 'P4')\n    }\n  };\n});\n\n// Summary stats\nconst totalCP = results.reduce((sum, r) => sum + parseFloat(r.json.contribution_profit), 0);\nconst profitableCount = results.filter(r => r.json.is_profitable).length;\n\nreturn [{\n  json: {\n    processed_count: results.length,\n    profitable_count: profitableCount,\n    total_cp: totalCP.toFixed(2),\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "code-process-id",
+      "name": "Calculate Contribution Profit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Implements CP formula from METRIC_DEFINITIONS.md"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GOOGLE_CHAT_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"cardsV2\": [{\n    \"cardId\": \"dailyReport\",\n    \"card\": {\n      \"header\": {\n        \"title\": \"📊 Daily Report\",\n        \"subtitle\": \"{{ $json.timestamp }}\"\n      },\n      \"sections\": [{\n        \"widgets\": [\n          {\n            \"decoratedText\": {\n              \"topLabel\": \"Products Processed\",\n              \"text\": \"{{ $json.processed_count }}\"\n            }\n          },\n          {\n            \"decoratedText\": {\n              \"topLabel\": \"Profitable Products\",\n              \"text\": \"{{ $json.profitable_count }}\"\n            }\n          },\n          {\n            \"decoratedText\": {\n              \"topLabel\": \"Total Contribution Profit\",\n              \"text\": \"{{ $json.total_cp }} PLN\"\n            }\n          }\n        ]\n      }]\n    }\n  }]\n}",
+        "options": {}
       },
       "id": "gchat-webhook-id",
-      "name": "Google Chat Webhook",
+      "name": "Send Google Chat Report",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [
-        1000,
-        300
-      ]
+      "position": [850, 300],
+      "notes": "Sends formatted card to Google Chat"
+    },
+    {
+      "parameters": {},
+      "id": "error-trigger-id",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GOOGLE_CHAT_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"🚨 *Workflow Error*\\n\\nWorkflow: {{ $json.workflow.name }}\\nNode: {{ $json.execution.error.node.name }}\\nMessage: {{ $json.execution.error.message }}\\nTime: {{ $now.toISO() }}\"\n}",
+        "options": {}
+      },
+      "id": "gchat-error-id",
+      "name": "Send Error Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 500],
+      "notes": "Alerts on workflow failure"
     }
   ],
   "connections": {
@@ -83,29 +128,40 @@
       "main": [
         [
           {
-            "node": "Download GDrive File",
+            "node": "List Input Files",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Download GDrive File": {
+    "List Input Files": {
       "main": [
         [
           {
-            "node": "Execute Python Script",
+            "node": "Calculate Contribution Profit",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Execute Python Script": {
+    "Calculate Contribution Profit": {
       "main": [
         [
           {
-            "node": "Google Chat Webhook",
+            "node": "Send Google Chat Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert",
             "type": "main",
             "index": 0
           }
@@ -114,12 +170,13 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "PeqoqExvdvxhdHZd"
   },
   "staticData": null,
   "meta": null,
   "pinData": null,
-  "versionId": "1a282290-a859-4915-8212-a44cc4ae7213",
+  "versionId": "2a382290-a859-4915-8212-a44cc4ae7214",
   "triggerCount": 0,
   "shared": [
     {
