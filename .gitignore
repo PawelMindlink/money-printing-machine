@@ -1,12 +1,42 @@
-# Data Inputs (Confidential)
+# Data Inputs & Outputs (Confidential)
 Input/
 Output/
 .env
 
-# Python
+# IDE Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+
+# OS-specific files
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Python Development
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 .ipynb_checkpoints/
 .venv/
 env/
-desktop.ini
+venv/
+build/
+dist/
+*.egg-info/
+
+# Testing & Metrics
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Security Safeguards (Generic patterns)
+*.key
+*.pem
+*.cert
+*.token
+*.secret
