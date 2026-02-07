@@ -68,21 +68,32 @@ def skip_header_comments(filepath):
     return ''.join(lines[start_idx:])
 
 def load_ga4_csv(filepath):
-    """Load GA4 CSV, skipping header comments"""
+    """Load GA4 CSV, skipping header comments and Grand Total row"""
     from io import StringIO
     csv_content = skip_header_comments(filepath)
-    df = pd.read_csv(StringIO(csv_content))
     
-    # Remove "Grand total" row and empty values (if Landing page column exists)
-    if 'Landing page' in df.columns:
-        df = df[df['Landing page'].notna()].copy()
-        df = df[~df['Landing page'].astype(str).str.contains('Grand total', case=False, na=False)].copy()
-        df = df[df['Landing page'].astype(str).str.strip() != ''].copy()
+    # Remove Grand Total row BEFORE parsing by Pandas
+    # This row has empty first column which shifts all data
+    lines = csv_content.strip().split('\n')
+    filtered_lines = []
     
-    # Also remove Grand total from other reports
-    for col in df.columns:
-        if df[col].dtype == 'object':
-            df = df[~df[col].astype(str).str.contains('Grand total', case=False, na=False)].copy()
+    for i, line in enumerate(lines):
+        # Keep header
+        if i == 0:
+            filtered_lines.append(line)
+            continue
+        
+        # Skip if any cell contains "Grand total" (case insensitive)
+        if 'grand total' not in line.lower():
+            filtered_lines.append(line)
+    
+    # Parse with Pandas
+    df = pd.read_csv(StringIO('\n'.join(filtered_lines)))
+    
+    # Additional cleanup - remove rows with empty first column value
+    first_col = df.columns[0]
+    df = df[df[first_col].notna()].copy()
+    df = df[df[first_col].astype(str).str.strip() != ''].copy()
     
     return df
 
@@ -326,7 +337,7 @@ def run_complete_pipeline(brand, input_dir, output_dir, brand_config):
     p8_output = final_df[final_df['priority'] == 'P8'].copy()
     p8_output.to_csv(p8_output_path, index=False)
     
-    print(f"\n✅ PIPELINE COMPLETE")
+    print(f"\n[OK] PIPELINE COMPLETE")
     print(f"   Main output: {output_path} ({len(main_output)} products)")
     print(f"   Skipped (P8): {p8_output_path} ({len(p8_output)} products)")
     
