@@ -71,7 +71,20 @@ def load_ga4_csv(filepath):
     """Load GA4 CSV, skipping header comments"""
     from io import StringIO
     csv_content = skip_header_comments(filepath)
-    return pd.read_csv(StringIO(csv_content))
+    df = pd.read_csv(StringIO(csv_content))
+    
+    # Remove "Grand total" row and empty values (if Landing page column exists)
+    if 'Landing page' in df.columns:
+        df = df[df['Landing page'].notna()].copy()
+        df = df[~df['Landing page'].astype(str).str.contains('Grand total', case=False, na=False)].copy()
+        df = df[df['Landing page'].astype(str).str.strip() != ''].copy()
+    
+    # Also remove Grand total from other reports
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            df = df[~df[col].astype(str).str.contains('Grand total', case=False, na=False)].copy()
+    
+    return df
 
 def parse_product_feed_xml(filepath):
     """Parse Facebook Product Feed XML"""
