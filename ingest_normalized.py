@@ -15,33 +15,34 @@ BRANDS = ["Bushido", "Iiyama", "Koszulkowy"]
 def normalize_url(url):
     """
     Standardizes URL to: domain.com/path
-    Removes: protocol, www, query params, trailing slash
+    Removes: protocol, www, query params, trailing slash, lowercases.
     """
     if not isinstance(url, str): return ""
     try:
-        # Strip whitespace
-        url = url.strip()
-        # Parse
-        parsed = urllib.parse.urlparse(url)
-        
-        # If no scheme, might be "domain.com/..."
-        if not parsed.netloc:
-             # Try adding https to see if it parses better, or just treat path as url
-             if "/" in url:
-                 parts = url.split("/")
-                 # Heuristic: if first part has dot, it's domain
-                 if "." in parts[0]: 
-                     path = "/".join(parts[1:])
-                     netloc = parts[0]
-                 else:
-                     return url # Fail safe
-             else:
-                 return url
+        # 0. Strip whitespace & lowercase
+        url = url.strip().lower()
 
-        netloc = parsed.netloc.replace("www.", "")
-        path = parsed.path.rstrip("/")
+        # 1. Remove Protocol
+        if "://" in url:
+            url = url.split("://")[-1]
+
+        # 2. Remove www.
+        if url.startswith("www."):
+            url = url[4:]
+
+        # 3. Strip Query Params
+        if "?" in url:
+            url = url.split("?")[0]
+
+        # 4. Remove Trailing Slash
+        if url.endswith("/"):
+            url = url[:-1]
+
+        # 5. Safety check for empty string after cleaning
+        if not url:
+            return ""
         
-        return f"{netloc}{path}"
+        return url
     except:
         return ""
 

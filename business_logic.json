@@ -1,0 +1,46 @@
+{
+    "schema_version": "1.0",
+    "tier_rules": {
+        "ga4": {
+            "star": {
+                "frequency_min": 1.5,
+                "revenue_min": 5000
+            },
+            "cash_cow": {
+                "frequency_max": 1.5,
+                "revenue_min": 10000
+            },
+            "hidden_gem": {
+                "frequency_min": 1.5,
+                "revenue_max": 5000
+            },
+            "ignore": {
+                "frequency_max": 1.5,
+                "revenue_max": 10000
+            }
+        },
+        "meta_ads": {
+            "profitable_threshold": 0
+        }
+    },
+    "clients": [
+        {
+            "name": "Brand_A",
+            "vat_rate": 0.23,
+            "margin_config": {
+                "default_rate": 0.50,
+                "category_overrides": [
+                    {
+                        "category": "Category_1",
+                        "rate": 0.10
+                    },
+                    {
+                        "category": "Category_2",
+                        "rate": 0.15
+                    }
+                ]
+            }
+        }
+    ],
+    "note": "To add a real client, append its configuration to the 'clients' list above. The key is to match 'category' from input data to 'category' in overrides."
+}

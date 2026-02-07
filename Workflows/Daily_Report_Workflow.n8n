@@ -1,0 +1,121 @@
+{
+  "name": "Daily Python Report Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-id",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fileId": "YOUR_FILE_ID_HERE",
+        "options": {}
+      },
+      "id": "gdrive-download-id",
+      "name": "Download GDrive File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        600,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "ixvQMToaVB8lHBHE",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "python3 {{ $env.PROJECT_ROOT }}/landing_page_final_generator.py"
+      },
+      "id": "execute-command-id",
+      "name": "Execute Python Script",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "YOUR_GOOGLE_CHAT_WEBHOOK_URL",
+        "sendBinaryData": false,
+        "options": {},
+        "headerParametersUi": {
+          "parameter": []
+        }
+      },
+      "id": "gchat-webhook-id",
+      "name": "Google Chat Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1000,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download GDrive File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download GDrive File": {
+      "main": [
+        [
+          {
+            "node": "Execute Python Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Python Script": {
+      "main": [
+        [
+          {
+            "node": "Google Chat Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "v1",
+  "id": "PeqoqExvdvxhdHZd",
+  "meta": {
+    "instanceId": "random-id"
+  },
+  "tags": []
+}
