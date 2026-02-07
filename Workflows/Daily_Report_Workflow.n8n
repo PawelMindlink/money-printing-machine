@@ -1,8 +1,8 @@
 {
   "createdAt": "2026-02-07T17:08:13.622Z",
-  "updatedAt": "2026-02-07T18:36:00.000Z",
+  "updatedAt": "2026-02-07T18:45:00.000Z",
   "id": "PeqoqExvdvxhdHZd",
-  "name": "Daily Report Workflow",
+  "name": "Daily Report - Complete Pipeline",
   "active": false,
   "isArchived": false,
   "nodes": [
@@ -26,51 +26,37 @@
     },
     {
       "parameters": {
-        "mode": "jsonExample",
-        "jsonExample": "{\n  \"vat_rate\": 0.23,\n  \"default_margin\": 0.50,\n  \"category_margins\": {\n    \"Category_1\": 0.10,\n    \"Category_2\": 0.15\n  },\n  \"frequency_rate\": 1.0\n}"
+        "command": "python c:/Users/Paweł/Documents/GitHub/Money\\ Printing\\ Machine/src/join_logic_final.py"
       },
-      "id": "config-node-id",
-      "name": "Load Business Config",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [450, 300],
-      "notes": "Business logic from business_logic.json - update this when config changes"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Load config from previous node\nconst config = $input.first().json;\n\n// Sample data - replace with actual GDrive/database input\nconst products = [\n  { id: 'P001', category: 'Category_1', meta_revenue: 1000, ad_spend: 50 },\n  { id: 'P002', category: 'Category_2', meta_revenue: 2000, ad_spend: 100 },\n  { id: 'P003', category: 'Other', meta_revenue: 500, ad_spend: 200 }\n];\n\n// Calculate CP for each product with category-specific margin\nconst results = products.map(product => {\n  // Get margin: use category-specific if exists, otherwise default\n  const margin = config.category_margins[product.category] || config.default_margin;\n  \n  // CP = (Revenue / (1 + VAT) * Margin * Frequency) - Ad_Spend\n  const revenue = parseFloat(product.meta_revenue || 0);\n  const adSpend = parseFloat(product.ad_spend || 0);\n  \n  const netRevenue = revenue / (1 + config.vat_rate);\n  const contributionProfit = (netRevenue * margin * config.frequency_rate) - adSpend;\n  \n  // Determine tier based on CP\n  let tier;\n  if (contributionProfit < 0) {\n    tier = 'P8'; // Negative CP - needs attention\n  } else if (contributionProfit > 500) {\n    tier = 'P1'; // Star performer\n  } else if (contributionProfit > 100) {\n    tier = 'P4'; // Solid performer\n  } else {\n    tier = 'P6'; // Low performer\n  }\n  \n  return {\n    json: {\n      product_id: product.id,\n      category: product.category,\n      margin_used: margin,\n      meta_revenue: revenue,\n      ad_spend: adSpend,\n      contribution_profit: contributionProfit.toFixed(2),\n      tier: tier,\n      is_profitable: contributionProfit > 0\n    }\n  };\n});\n\nreturn results;"
-      },
-      "id": "code-process-id",
-      "name": "Calculate CP per Product",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [650, 300],
-      "notes": "Applies category-specific margins from config"
-    },
-    {
-      "parameters": {
-        "aggregate": "aggregateAllItemData",
-        "destinationFieldName": "products",
-        "include": "allFieldsExcept",
-        "fieldsToExclude": ""
-      },
-      "id": "aggregate-id",
-      "name": "Aggregate Results",
-      "type": "n8n-nodes-base.aggregate",
+      "id": "execute-python-id",
+      "name": "Run Python Script",
+      "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
-      "position": [850, 300],
-      "notes": "Combines all product results into single output"
+      "position": [450, 300],
+      "notes": "Executes join_logic_final.py which: 1) Reads local CSV files, 2) Normalizes URLs, 3) Joins Meta+Feed, 4) Calculates CP with category margins, 5) Saves Landing_Page_Report.csv"
     },
     {
       "parameters": {
-        "jsCode": "const products = $input.first().json.products;\n\n// Calculate summary statistics\nconst totalCP = products.reduce((sum, p) => sum + parseFloat(p.contribution_profit), 0);\nconst profitableCount = products.filter(p => p.is_profitable).length;\nconst p8Count = products.filter(p => p.tier === 'P8').length;\n\n// Group by tier\nconst tierCounts = {};\nproducts.forEach(p => {\n  tierCounts[p.tier] = (tierCounts[p.tier] || 0) + 1;\n});\n\nreturn [{\n  json: {\n    summary: {\n      total_products: products.length,\n      profitable_count: profitableCount,\n      needs_attention_count: p8Count,\n      total_contribution_profit: totalCP.toFixed(2),\n      tier_distribution: tierCounts,\n      report_timestamp: new Date().toISOString()\n    },\n    products: products\n  }\n}];"
+        "filePath": "={{ 'c:/Users/Paweł/Documents/GitHub/Money Printing Machine/Output/' + $json.brand + '/Landing_Page_Report.csv' }}",
+        "options": {}
+      },
+      "id": "read-output-id",
+      "name": "Read Output Report",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "notes": "Reads generated Landing_Page_Report.csv for further processing"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse CSV and generate summary\nconst brands = ['Bushido', 'Iiyama', 'Koszulkowy'];\nconst results = [];\n\nfor (const brand of brands) {\n  try {\n    const fs = require('fs');\n    const path = `c:/Users/Paweł/Documents/GitHub/Money Printing Machine/Output/${brand}/Landing_Page_Report.csv`;\n    \n    if (!fs.existsSync(path)) {\n      results.push({ brand, status: 'MISSING', error: 'Report not generated' });\n      continue;\n    }\n    \n    const content = fs.readFileSync(path, 'utf-8');\n    const lines = content.split('\\n').filter(l => l.trim());\n    \n    const lp_count = lines.length - 1; // Exclude header\n    \n    results.push({\n      brand,\n      status: 'SUCCESS',\n      landing_pages_processed: lp_count,\n      report_path: path,\n      timestamp: new Date().toISOString()\n    });\n  } catch (error) {\n    results.push({ brand, status: 'ERROR', error: error.message });\n  }\n}\n\nreturn [{ json: { brands: results, total_brands: brands.length, timestamp: new Date().toISOString() } }];"
       },
       "id": "summary-node-id",
       "name": "Generate Summary",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1050, 300],
-      "notes": "Creates final report with summary stats"
+      "position": [850, 300],
+      "notes": "Generates summary of processed landing pages per brand"
     }
   ],
   "connections": {
@@ -78,36 +64,25 @@
       "main": [
         [
           {
-            "node": "Load Business Config",
+            "node": "Run Python Script",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Load Business Config": {
+    "Run Python Script": {
       "main": [
         [
           {
-            "node": "Calculate CP per Product",
+            "node": "Read Output Report",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Calculate CP per Product": {
-      "main": [
-        [
-          {
-            "node": "Aggregate Results",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Aggregate Results": {
+    "Read Output Report": {
       "main": [
         [
           {
@@ -125,7 +100,7 @@
   "staticData": null,
   "meta": null,
   "pinData": null,
-  "versionId": "3a482290-a859-4915-8212-a44cc4ae7215",
+  "versionId": "4a482290-a859-4915-8212-a44cc4ae7216",
   "triggerCount": 0,
   "shared": [
     {
