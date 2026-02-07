@@ -239,7 +239,18 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         if lp_col:
             lp_df['path_key'] = lp_df[lp_col].apply(extract_path)
             # Ensure numeric columns for aggregation
-            cols_to_sum = ['Sessions', 'Purchases', 'First time purchasers']
+            # 'Purchase revenue' comes from API (renamed from Item revenue in client) or CSV
+            cols_to_sum = ['Sessions', 'Purchases', 'First time purchasers', 'Purchase revenue']
+            
+            # Normalization for CSV/API differences
+            if 'Purchase revenue' not in lp_df.columns:
+                # Try finding similar columns
+                rev_col = next((c for c in lp_df.columns if 'revenue' in c.lower() and 'purchase' in c.lower()), None)
+                if rev_col:
+                    lp_df.rename(columns={rev_col: 'Purchase revenue'}, inplace=True)
+                else:
+                    lp_df['Purchase revenue'] = 0
+            
             for c in cols_to_sum:
                 if c not in lp_df.columns:
                     lp_df[c] = 0
@@ -275,6 +286,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     
     # Calculate Frequency (Transactions / First time purchasers)
     # Using LP purchases as primary transaction source for frequency calculation
+    # Denominator: First time purchasers (as requested by User)
     df['calc_frequency'] = df['Purchases'].fillna(0) / df['First time purchasers'].replace(0, 1)
     
     # Apply Margin Mapping (Robust partial match)
@@ -329,6 +341,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
             df.loc[mask, 'price_cluster'] = clusters
 
     # CP = (Purch_Conv_Val / (1 + VAT) * Margin * Frequency) - Ad_Spend
+    # Metric: Contribution Profit based on Meta Revenue and Margin
     df['contribution_profit'] = (
         (df['meta_revenue'].fillna(0) / (1+vat)) * df['gross_margin'] * df['calc_frequency']
     ) - df['meta_spend'].fillna(0)
@@ -340,67 +353,68 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     
     df['meta_class'] = df.apply(get_meta_class, axis=1)
     
-    df['meta_class'] = df.apply(get_meta_class, axis=1)
-    
     # ARPU (Average Revenue Per User)
-    # Use 'Users' from LP data if available, else fallback to Sessions
+    # User requested: Purchase revenue (LP) / Sessions (or Users)
+    # Prioritizing LP Purchase Revenue as it captures total basket value on landing
+    rev_source = 'Purchase revenue' if 'Purchase revenue' in df.columns else 'Item revenue'
     user_col = 'Users' if 'Users' in df.columns else 'Sessions'
-    df['arpu'] = df['Item revenue'].fillna(0) / df[user_col].replace(0, pd.NA)
+    
+    df['arpu'] = df[rev_source].fillna(0) / df[user_col].replace(0, pd.NA)
     df['arpu'] = df['arpu'].fillna(0)
     
-    # GA4 Classification (PERCENTILE-BASED - Logic v2.0)
+    # GA4 Classification (PERCENTILE-BASED - Logic v4.0 Quadrants)
     # Filter: Session/Activity Threshold to avoid noise
     sess_col = 'Sessions'
     min_activity = df[sess_col].quantile(0.25) if sess_col in df.columns else 0
     
-    revenue_col = 'Item revenue'
-    trans_col = 'Purchases' # User requested Transactions instead of Frequency
+    # Using Purchase Revenue (LP) for classification if available (User request)
+    # But for Quadrants V4.0 we use Transactions and ARPU only.
+    # Revenue is implicitly Covered by ARPU x Transactions.
+    
+    # revenue_col = rev_source # Not strictly used in V4.0 decision tree
+    trans_col = 'Purchases' # Transactions
     arpu_col = 'arpu'
     
     
-    # Calculate thresholds based on NON-ZERO data (to handle long tail/zero-inflated data like Koszulkowy)
+    # Calculate thresholds based on NON-ZERO data (Active Products Only)
     def non_zero_quantile(series, q=0.75):
         valid = series[series > 0]
         if valid.empty: return 0
         return valid.quantile(q)
         
-    rev_75 = non_zero_quantile(df[revenue_col], 0.75)
     trans_75 = non_zero_quantile(df[trans_col], 0.75)
+    arpu_75 = non_zero_quantile(df[arpu_col], 0.75)
     arpu_median = non_zero_quantile(df[arpu_col], 0.50)
     
-    # Handle edge case where even non-zero P75 is low? No, usually P75 of non-zero is robust.
-    
-    print(f"Classification Thresholds (Non-Zero P75/Median): Revenue≥{rev_75:.0f}, Trans≥{trans_75:.0f}, MedianARPU≥{arpu_median:.2f}")
+    print(f"Classification Thresholds (Active Products P75): Trans≥{trans_75:.0f}, ARPU≥{arpu_75:.2f} (Median: {arpu_median:.2f})")
     
     def get_ga4_class(row):
-        # 0. Cold Filter
+        # 0. Cold Filter (Must have at least defined minimum activity to be classified)
         if row.get(sess_col, 0) < min_activity:
             return 'Slacker'
 
-        rev = row[revenue_col] if not pd.isna(row[revenue_col]) else 0
         trans = row[trans_col] if not pd.isna(row[trans_col]) else 0
         arpu = row[arpu_col] if not pd.isna(row[arpu_col]) else 0
         
-        is_high_rev = rev >= rev_75 and rev > 0
-        is_high_trans = trans >= trans_75 and trans > 0
-        is_high_arpu = arpu >= arpu_median and arpu > 0
+        # Logic V4.0: Quadrants (Transactions vs ARPU)
+        # Star       = High Trans AND High ARPU
+        # Cash Cow   = High Trans AND Low ARPU
+        # Hidden Gem = Low Trans  AND High ARPU
+        # Slacker    = Low Trans  AND Low ARPU
         
-        # 1. Star: High Rev AND High Trans
-        if is_high_rev and is_high_trans:
-            return 'Star'
-            
-        # 2. Cash Cow: High Rev AND Low Trans (High Ticket)
-        elif is_high_rev and not is_high_trans:
-            return 'Cash Cow'
-            
-        # 3. Hidden Gem: Low Rev (implied) AND High ARPU AND High Trans/Activity
-        # (Using ARPU as quality check)
-        elif not is_high_rev and is_high_arpu:
-             return 'Hidden Gem'
-             
-        # 4. Slacker
+        is_high_trans = trans >= trans_75 and trans > 0
+        is_high_arpu = arpu >= arpu_75 and arpu > 0 
+        
+        if is_high_trans:
+            if is_high_arpu:
+                return 'Star'
+            else:
+                return 'Cash Cow'
         else:
-            return 'Slacker'
+            if is_high_arpu:
+                return 'Hidden Gem'
+            else:
+                return 'Slacker'
         
     df['ga4_class'] = df.apply(get_ga4_class, axis=1)
 

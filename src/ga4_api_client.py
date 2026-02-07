@@ -51,7 +51,7 @@ def fetch_ga4_landing_pages(credentials_path, property_id, start_date='2024-01-0
             "Users": int(row.metric_values[1].value),
             "First time purchasers": int(row.metric_values[2].value),
             "Purchases": int(row.metric_values[3].value),
-            "Item revenue": float(row.metric_values[4].value)
+            "Purchase revenue": float(row.metric_values[4].value)
         })
 
     if not data:
