@@ -1,71 +1,308 @@
 {
-  "name": "Complete Pipeline (HTTP API)",
+  "createdAt": "2026-02-07T21:43:07.289Z",
+  "updatedAt": "2026-02-07T21:43:07.656Z",
+  "id": "zahXGQrBmYWIrna4",
+  "name": "Money Printing Machine (HTTP Granular)",
+  "active": false,
+  "isArchived": false,
   "nodes": [
     {
       "parameters": {},
-      "id": "manual-trigger",
-      "name": "Manual Trigger",
-      "type": "n8n-nodes-base.manualTrigger",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [
+        250,
+        300
+      ],
+      "id": "a9570364-7454-43ce-95e3-3f31daf3fe94"
     },
     {
       "parameters": {
         "values": {
           "string": [
-            { "name": "brand", "value": "Bushido" }
+            {
+              "name": "BRAND_NAME",
+              "value": "Iiyama"
+            },
+            {
+              "name": "FEED_URL",
+              "value": "https://example.com/feed.xml"
+            },
+            {
+              "name": "GA4_PROPERTY_ID",
+              "value": "123456789"
+            }
           ]
         }
       },
-      "id": "set-brand",
-      "name": "Set Brand",
+      "name": "Config",
       "type": "n8n-nodes-base.set",
-      "typeVersion": 3,
-      "position": [450, 300],
-      "notes": "Change 'Bushido' to desired brand: Iiyama, Koszulkowy"
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "id": "a5988d26-d325-4462-8e0d-728a972efe11"
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "http://host.docker.internal:5000/run_pipeline",
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            { "name": "brand", "value": "={{ $json.brand }}" }
-          ]
-        },
+        "url": "={{ $json[\"FEED_URL\"] }}",
+        "method": "GET",
+        "responseFormat": "string"
+      },
+      "name": "Get Product Feed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        650,
+        200
+      ],
+      "id": "f89f47ab-1f84-4417-b920-d90747960571"
+    },
+    {
+      "parameters": {
+        "mode": "xml2json",
         "options": {}
       },
-      "id": "run-pipeline",
-      "name": "Run Pipeline API",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [650, 300],
-      "notes": "Calls local Flask API. Requires api_server.py running on host."
+      "name": "Parse XML",
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        850,
+        200
+      ],
+      "id": "fba0c479-f6df-405c-a856-7acf52ceabbc"
     },
     {
       "parameters": {
-        "jsCode": "const result = $input.first().json;\n\nif (result.status === 'success') {\n  return [{ json: {\n    brand: result.brand,\n    total_products: result.total_products,\n    priorities: result.priority_breakdown,\n    ga4_classes: result.ga4_class_breakdown,\n    output_file: result.output_file,\n    message: `Pipeline completed for ${result.brand}: ${result.total_products} products processed.`\n  }}];\n} else {\n  throw new Error(result.message || 'Pipeline failed');\n}"
+        "functionCode": "// Normalize Feed Data\nconst items = items[0].json.rss.channel.item;\nreturn items.map(item => {\n  const p = {};\n  // Extract fields with namespace handling (naive)\n  p.id = item['g:id'] || item.id;\n  p.title = item['g:title'] || item.title;\n  p.price_raw = item['g:price'] || item.price;\n  p.price = parseFloat((p.price_raw || '0').replace(/[^0-9.]/g, ''));\n  p.link = item['g:link'] || item.link;\n  p.category = item['g:google_product_category'];\n  p.brand = item['g:brand'];\n  \n  // Normalize URL\n  try {\n      const urlObj = new URL(p.link);\n      p.path = urlObj.pathname;\n  } catch(e) { p.path = p.link; }\n  \n  return { json: p };\n});"
       },
-      "id": "format-result",
-      "name": "Format Result",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [850, 300]
+      "name": "Normalize Feed",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        200
+      ],
+      "id": "298cbfec-22ec-47ce-ab4d-14d1093fca05"
+    },
+    {
+      "parameters": {
+        "url": "https://analyticsdata.googleapis.com/v1beta/properties/{{ $node[\"Config\"].json[\"GA4_PROPERTY_ID\"] }}:runReport",
+        "method": "POST",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleAnalyticsOAuth2Api",
+        "options": {}
+      },
+      "name": "Get GA4 Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        650,
+        400
+      ],
+      "id": "dedd251c-522a-4a4c-9073-05a2dbc99b1a"
+    },
+    {
+      "parameters": {
+        "mode": "mergeByIndex",
+        "join": "inner"
+      },
+      "name": "Merge Feed & GA4",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ],
+      "id": "879c7ec3-1dac-4576-91df-9b940ad59758"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Business Logic V4.1\n// 1. Calculate CP\n// 2. Classify (Stars, Cows, Slackers)\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n    const data = item.json;\n    \n    // Defaults\n    data.sessions = data.sessions || 0;\n    data.purchases = data.purchases || 0;\n    data.revenue = data.revenue || 0;\n    data.meta_spend = data.meta_spend || 0;\n    \n    // 1. Financials\n    const VAT = 0.23;\n    const MARGIN = 0.15; // Default\n    const revenue_net = data.revenue / (1 + VAT);\n    \n    // Frequency = Purchases / First_Time (fallback to 1)\n    const freq = data.purchases / (data.first_time_purchasers || 1);\n    \n    // CP Formula\n    data.contribution_profit = (revenue_net * MARGIN * freq) - data.meta_spend;\n    \n    // 2. ARPU (Rev / Sessions)\n    data.arpu = data.sessions > 0 ? (data.revenue / data.sessions) : 0;\n    \n    // 3. Classification (Static Thresholds for Demo - normally dynamic)\n    // P75 Thresholds (example)\n    const T_TRANS = 10;\n    const T_ARPU = 5.0;\n    \n    if (data.purchases >= T_TRANS) {\n        if (data.arpu >= T_ARPU) data.class = 'Star';\n        else data.class = 'Cash Cow';\n    } else {\n        if (data.arpu >= T_ARPU) data.class = 'Hidden Gem';\n        else data.class = 'Slacker';\n    }\n    \n    results.push({ json: data });\n}\n\nreturn results;"
+      },
+      "name": "Business Logic",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ],
+      "id": "6fd771ab-5a3e-46f1-8955-1297687c0aa0"
+    },
+    {
+      "parameters": {
+        "operation": "toFile",
+        "fileFormat": "csv",
+        "options": {}
+      },
+      "name": "Generate CSV",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        300
+      ],
+      "id": "b9ccc994-1657-40d3-9246-9149d8f6c4fe"
     }
   ],
   "connections": {
-    "Manual Trigger": {
-      "main": [[{"node": "Set Brand", "type": "main", "index": 0}]]
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Set Brand": {
-      "main": [[{"node": "Run Pipeline API", "type": "main", "index": 0}]]
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get Product Feed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get GA4 Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Run Pipeline API": {
-      "main": [[{"node": "Format Result", "type": "main", "index": 0}]]
+    "Get Product Feed": {
+      "main": [
+        [
+          {
+            "node": "Parse XML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse XML": {
+      "main": [
+        [
+          {
+            "node": "Normalize Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Feed": {
+      "main": [
+        [
+          {
+            "node": "Merge Feed & GA4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get GA4 Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Feed & GA4",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Feed & GA4": {
+      "main": [
+        [
+          {
+            "node": "Business Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Logic": {
+      "main": [
+        [
+          {
+            "node": "Generate CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "settings": {
-    "executionOrder": "v1"
-  }
+  "settings": {},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "92c3221b-5033-4ec7-87fa-29917b9a8a99",
+  "triggerCount": 0,
+  "shared": [
+    {
+      "createdAt": "2026-02-07T21:43:07.296Z",
+      "updatedAt": "2026-02-07T21:43:07.296Z",
+      "role": "workflow:owner",
+      "workflowId": "zahXGQrBmYWIrna4",
+      "projectId": "HdWBpWyygCpr2hPz",
+      "project": {
+        "createdAt": "2025-06-04T17:12:06.615Z",
+        "updatedAt": "2025-06-04T17:19:23.175Z",
+        "id": "HdWBpWyygCpr2hPz",
+        "name": "Christopher Gibb <chris@ironcode.io>",
+        "type": "personal",
+        "icon": null,
+        "projectRelations": [
+          {
+            "createdAt": "2025-06-04T17:12:06.615Z",
+            "updatedAt": "2025-06-04T17:12:06.615Z",
+            "role": "project:personalOwner",
+            "userId": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
+            "projectId": "HdWBpWyygCpr2hPz",
+            "user": {
+              "createdAt": "2025-06-04T17:12:05.084Z",
+              "updatedAt": "2026-01-19T09:51:41.708Z",
+              "id": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
+              "email": "chris@ironcode.io",
+              "firstName": "Christopher",
+              "lastName": "Gibb",
+              "personalizationAnswers": {
+                "companyType": "personal",
+                "reportedSource": "friend",
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-06-04T17:19:38.362Z",
+                "personalization_survey_n8n_version": "1.54.4"
+              },
+              "settings": {
+                "userActivated": true,
+                "firstSuccessfulWorkflowId": "o32leWbxq0RNU38m",
+                "userActivatedAt": 1749182444106,
+                "easyAIWorkflowOnboarded": true,
+                "npsSurvey": {
+                  "waitingForResponse": true,
+                  "ignoredCount": 2,
+                  "lastShownAt": 1768816299172
+                }
+              },
+              "role": "global:owner",
+              "disabled": false,
+              "mfaEnabled": false,
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": []
 }

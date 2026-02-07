@@ -1,0 +1,87 @@
+{
+    "name": "Money Printing Machine (V5.0 - Full Pipeline)",
+    "nodes": [
+        {
+            "parameters": {},
+            "name": "Manual Trigger",
+            "type": "n8n-nodes-base.manualTrigger",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "return [\n  { json: { brand: \"Bushido\" } },\n  { json: { brand: \"Iiyama\" } },\n  { json: { brand: \"Koszulkowy\" } }\n];"
+            },
+            "name": "Set Brands",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 1,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "command": "=python src/complete_pipeline.py {{ $json.brand }}"
+            },
+            "name": "Pipeline Engine",
+            "type": "n8n-nodes-base.executeCommand",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "command": "python src/summary_engine.py"
+            },
+            "name": "Summary Engine",
+            "type": "n8n-nodes-base.executeCommand",
+            "typeVersion": 1,
+            "position": [
+                850,
+                300
+            ],
+            "executeOnce": true
+        }
+    ],
+    "connections": {
+        "Manual Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Set Brands",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Set Brands": {
+            "main": [
+                [
+                    {
+                        "node": "Pipeline Engine",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Pipeline Engine": {
+            "main": [
+                [
+                    {
+                        "node": "Summary Engine",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}
