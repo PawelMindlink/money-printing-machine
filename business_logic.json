@@ -50,43 +50,39 @@
                 "default_rate": 0.10,
                 "category_overrides": [
                     {
-                        "category": "desktop monitors",
+                        "category": "biurowe",
                         "rate": 0.10
                     },
                     {
-                        "category": "gaming monitors",
+                        "category": "dla graczy",
                         "rate": 0.10
                     },
                     {
-                        "category": "signage displays",
+                        "category": "wielkoformatowe",
                         "rate": 0.10
                     },
                     {
-                        "category": "open frame touchscreens",
+                        "category": "dotykowe",
                         "rate": 0.15
                     },
                     {
-                        "category": "unified communication",
+                        "category": "akcesoria",
                         "rate": 0.15
                     },
                     {
-                        "category": "accessories",
+                        "category": "uchwyty",
                         "rate": 0.15
                     },
                     {
-                        "category": "ifp",
+                        "category": "ramiona",
                         "rate": 0.15
                     },
                     {
-                        "category": "interactive",
+                        "category": "linki",
                         "rate": 0.15
                     },
                     {
-                        "category": "touchscreen monitors",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "android touch displays",
+                        "category": "interaktywne",
                         "rate": 0.15
                     }
                 ]
