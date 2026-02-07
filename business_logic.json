@@ -8,7 +8,7 @@
             },
             "cash_cow": {
                 "frequency_max": 1.5,
-                "revenue_min": 10000
+                "revenue_min": 5000
             },
             "hidden_gem": {
                 "frequency_min": 1.5,
@@ -16,7 +16,7 @@
             },
             "slacker": {
                 "frequency_max": 1.5,
-                "revenue_max": 10000
+                "revenue_max": 5000
             }
         },
         "meta_ads": {

@@ -6,7 +6,7 @@ from io import StringIO
 import sys
 import json
 from pathlib import Path
-from ga4_api_client import fetch_ga4_data
+from ga4_api_client import fetch_ga4_data, fetch_ga4_items
 
 # HARDCODED PATH TO CREDENTIALS (for n8n/local execution) - Overridable via Env Var
 GA4_CREDS_PATH = os.environ.get("GA4_CREDS_PATH", r"c:\Users\Paweł\Documents\GitHub\ICP Research\Core\Configs\ga4_credentials.json")
@@ -146,13 +146,31 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         return None
     print(f"Loaded {len(df)} products from Feed")
 
-    # 3. Enrich with Items (Metric Depth)
-    items_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_items_freeform.csv")
-    if not os.path.exists(items_path):
-        items_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_items.csv")
-        
-    if os.path.exists(items_path):
-        items_df = load_ga4_csv(items_path)
+    # 3. Enrich with Items (Metric Depth - Hybrid API/CSV)
+    items_df = pd.DataFrame()
+    items_source = "CSV"
+    
+    # Try API if Property ID exists
+    prop_id = config.get('ga4_property_id')
+    if prop_id and os.path.exists(GA4_CREDS_PATH):
+        try:
+            items_df = fetch_ga4_items(GA4_CREDS_PATH, prop_id, limit=100000)
+            if not items_df.empty:
+                items_source = "API"
+        except Exception as e:
+            print(f"Items API failed: {e}. Falling back to CSV.")
+            
+    # Fallback to CSV
+    if items_df.empty:
+        items_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_items_freeform.csv")
+        if not os.path.exists(items_path):
+            items_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_items.csv")
+            
+        if os.path.exists(items_path):
+            items_df = load_ga4_csv(items_path)
+            
+    # Process Items if loaded
+    if not items_df.empty:
         items_df['Item ID'] = items_df['Item ID'].astype(str)
         def get_clean_id(id_val):
             return str(id_val).split('-')[0].split('.')[0]
@@ -166,7 +184,8 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         }).reset_index()
         
         df = pd.merge(df, items_agg, left_on='id', right_on='Clean ID', how='left')
-        print(f"Enriched with GA4 Items (Match: {df['Clean ID'].notna().sum()})")
+        print(f"Enriched with GA4 Items ({items_source}, Match: {df['Clean ID'].notna().sum()})")
+
 
     # 4. Enrich with Landing Pages (Session Depth - Hybrid API/CSV)
     lp_df = pd.DataFrame()

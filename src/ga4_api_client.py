@@ -8,17 +8,19 @@ from google.analytics.data_v1beta.types import (
     Metric,
 )
 
-def fetch_ga4_data(credentials_path, property_id, start_date='2024-01-01', end_date='today', limit=100000):
+def _get_client(credentials_path):
+    """Initialize GA4 client with credentials."""
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
+    return BetaAnalyticsDataClient()
+
+def fetch_ga4_landing_pages(credentials_path, property_id, start_date='2024-01-01', end_date='today', limit=100000):
     """
-    Fetches GA4 data using the official API.
+    Fetches GA4 Landing Page data using the official API.
     Returns a DataFrame compatible with the pipeline's expected format.
     """
-    
-    print(f"Initializing GA4 Client with credentials: {credentials_path}")
-    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
-    client = BetaAnalyticsDataClient()
+    print(f"[LP] Fetching Landing Pages for Property {property_id}...")
+    client = _get_client(credentials_path)
 
-    print(f"Requesting report for Property {property_id} ({start_date} to {end_date})...")
     request = RunReportRequest(
         property=f"properties/{property_id}",
         date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
@@ -38,11 +40,9 @@ def fetch_ga4_data(credentials_path, property_id, start_date='2024-01-01', end_d
     try:
         response = client.run_report(request=request)
     except Exception as e:
-        print(f"CRITICAL API ERROR: {e}")
+        print(f"[LP] API ERROR: {e}")
         return pd.DataFrame()
 
-    print(f"Report received. Processing {len(response.rows)} rows...")
-    
     data = []
     for row in response.rows:
         data.append({
@@ -55,14 +55,63 @@ def fetch_ga4_data(credentials_path, property_id, start_date='2024-01-01', end_d
         })
 
     if not data:
-        print("No data found in GA4 response.")
+        print("[LP] No data returned.")
         return pd.DataFrame()
 
     df = pd.DataFrame(data)
-    
-    # Rename columns to match CSV format expected by pipeline
-    # CSV headers were: Landing page + query string,Sessions,Users,First time purchasers,Purchases,Item revenue
-    # API data is already in this format via dict keys.
-    
-    print(f"Success. DataFrame shape: {df.shape}")
+    print(f"[LP] Success: {len(df)} rows.")
     return df
+
+
+def fetch_ga4_items(credentials_path, property_id, start_date='2024-01-01', end_date='today', limit=100000):
+    """
+    Fetches GA4 Item-level data using the official API.
+    Returns a DataFrame compatible with the pipeline's expected format.
+    """
+    print(f"[Items] Fetching Items for Property {property_id}...")
+    client = _get_client(credentials_path)
+
+    request = RunReportRequest(
+        property=f"properties/{property_id}",
+        date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
+        dimensions=[
+            Dimension(name="itemId"),
+            Dimension(name="itemName"),
+        ],
+        metrics=[
+            Metric(name="itemsViewed"),
+            Metric(name="itemsPurchased"),
+            Metric(name="itemRevenue"),
+        ],
+        limit=limit
+    )
+
+    try:
+        response = client.run_report(request=request)
+    except Exception as e:
+        print(f"[Items] API ERROR: {e}")
+        return pd.DataFrame()
+
+    data = []
+    for row in response.rows:
+        data.append({
+            "Item ID": row.dimension_values[0].value,
+            "Item name": row.dimension_values[1].value,
+            "Items viewed": int(row.metric_values[0].value),
+            "Items purchased": int(row.metric_values[1].value),
+            "Item revenue": float(row.metric_values[2].value)
+        })
+
+    if not data:
+        print("[Items] No data returned.")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(data)
+    print(f"[Items] Success: {len(df)} rows.")
+    return df
+
+
+# Legacy alias for backward compatibility
+def fetch_ga4_data(credentials_path, property_id, start_date='2024-01-01', end_date='today', limit=100000):
+    """Backward-compatible alias for fetch_ga4_landing_pages."""
+    return fetch_ga4_landing_pages(credentials_path, property_id, start_date, end_date, limit)

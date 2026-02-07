@@ -1,0 +1,71 @@
+{
+  "name": "Complete Pipeline (HTTP API)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "brand", "value": "Bushido" }
+          ]
+        }
+      },
+      "id": "set-brand",
+      "name": "Set Brand",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [450, 300],
+      "notes": "Change 'Bushido' to desired brand: Iiyama, Koszulkowy"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5000/run_pipeline",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "brand", "value": "={{ $json.brand }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "run-pipeline",
+      "name": "Run Pipeline API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300],
+      "notes": "Calls local Flask API. Requires api_server.py running on host."
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\n\nif (result.status === 'success') {\n  return [{ json: {\n    brand: result.brand,\n    total_products: result.total_products,\n    priorities: result.priority_breakdown,\n    ga4_classes: result.ga4_class_breakdown,\n    output_file: result.output_file,\n    message: `Pipeline completed for ${result.brand}: ${result.total_products} products processed.`\n  }}];\n} else {\n  throw new Error(result.message || 'Pipeline failed');\n}"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{"node": "Set Brand", "type": "main", "index": 0}]]
+    },
+    "Set Brand": {
+      "main": [[{"node": "Run Pipeline API", "type": "main", "index": 0}]]
+    },
+    "Run Pipeline API": {
+      "main": [[{"node": "Format Result", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
