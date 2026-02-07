@@ -1,8 +1,8 @@
 {
   "createdAt": "2026-02-07T17:08:13.622Z",
-  "updatedAt": "2026-02-07T18:31:00.000Z",
+  "updatedAt": "2026-02-07T18:36:00.000Z",
   "id": "PeqoqExvdvxhdHZd",
-  "name": "Daily Python Report Workflow",
+  "name": "Daily Report Workflow",
   "active": false,
   "isArchived": false,
   "nodes": [
@@ -26,101 +26,51 @@
     },
     {
       "parameters": {
-        "operation": "list",
-        "folderId": {
-          "__rl": true,
-          "value": "root",
-          "mode": "list"
-        },
-        "filter": {
-          "foldersOnly": false,
-          "mimeType": "application/vnd.google-apps.spreadsheet"
-        },
-        "options": {
-          "fields": "id,name,modifiedTime"
-        }
+        "mode": "jsonExample",
+        "jsonExample": "{\n  \"vat_rate\": 0.23,\n  \"default_margin\": 0.50,\n  \"category_margins\": {\n    \"Category_1\": 0.10,\n    \"Category_2\": 0.15\n  },\n  \"frequency_rate\": 1.0\n}"
       },
-      "id": "gdrive-list-id",
-      "name": "List Input Files",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
+      "id": "config-node-id",
+      "name": "Load Business Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
       "position": [450, 300],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "ixvQMToaVB8lHBHE",
-          "name": "Google Drive account"
-        }
-      },
-      "notes": "Lists available input files from GDrive"
+      "notes": "Business logic from business_logic.json - update this when config changes"
     },
     {
       "parameters": {
-        "jsCode": "// Process GA4 + Meta data and calculate Contribution Profit\nconst items = $input.all();\n\n// Business logic from business_logic.json\nconst config = {\n  vat_rate: 0.23,\n  margin_percent: 0.30,\n  frequency_rate: 1.0\n};\n\n// Map over items and compute CP\nconst results = items.map(item => {\n  const data = item.json;\n  \n  // CP = (Revenue / (1 + VAT) * Margin * Frequency) - Ad_Spend\n  const revenue = parseFloat(data.meta_revenue || 0);\n  const adSpend = parseFloat(data.ad_spend || 0);\n  \n  const cp = (revenue / (1 + config.vat_rate) * config.margin_percent * config.frequency_rate) - adSpend;\n  \n  return {\n    json: {\n      ...data,\n      contribution_profit: cp.toFixed(2),\n      is_profitable: cp > 0,\n      tier: cp < 0 ? 'P8' : (cp > 100 ? 'P1' : 'P4')\n    }\n  };\n});\n\n// Summary stats\nconst totalCP = results.reduce((sum, r) => sum + parseFloat(r.json.contribution_profit), 0);\nconst profitableCount = results.filter(r => r.json.is_profitable).length;\n\nreturn [{\n  json: {\n    processed_count: results.length,\n    profitable_count: profitableCount,\n    total_cp: totalCP.toFixed(2),\n    timestamp: new Date().toISOString()\n  }\n}];"
+        "jsCode": "// Load config from previous node\nconst config = $input.first().json;\n\n// Sample data - replace with actual GDrive/database input\nconst products = [\n  { id: 'P001', category: 'Category_1', meta_revenue: 1000, ad_spend: 50 },\n  { id: 'P002', category: 'Category_2', meta_revenue: 2000, ad_spend: 100 },\n  { id: 'P003', category: 'Other', meta_revenue: 500, ad_spend: 200 }\n];\n\n// Calculate CP for each product with category-specific margin\nconst results = products.map(product => {\n  // Get margin: use category-specific if exists, otherwise default\n  const margin = config.category_margins[product.category] || config.default_margin;\n  \n  // CP = (Revenue / (1 + VAT) * Margin * Frequency) - Ad_Spend\n  const revenue = parseFloat(product.meta_revenue || 0);\n  const adSpend = parseFloat(product.ad_spend || 0);\n  \n  const netRevenue = revenue / (1 + config.vat_rate);\n  const contributionProfit = (netRevenue * margin * config.frequency_rate) - adSpend;\n  \n  // Determine tier based on CP\n  let tier;\n  if (contributionProfit < 0) {\n    tier = 'P8'; // Negative CP - needs attention\n  } else if (contributionProfit > 500) {\n    tier = 'P1'; // Star performer\n  } else if (contributionProfit > 100) {\n    tier = 'P4'; // Solid performer\n  } else {\n    tier = 'P6'; // Low performer\n  }\n  \n  return {\n    json: {\n      product_id: product.id,\n      category: product.category,\n      margin_used: margin,\n      meta_revenue: revenue,\n      ad_spend: adSpend,\n      contribution_profit: contributionProfit.toFixed(2),\n      tier: tier,\n      is_profitable: contributionProfit > 0\n    }\n  };\n});\n\nreturn results;"
       },
       "id": "code-process-id",
-      "name": "Calculate Contribution Profit",
+      "name": "Calculate CP per Product",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [650, 300],
-      "notes": "Implements CP formula from METRIC_DEFINITIONS.md"
+      "notes": "Applies category-specific margins from config"
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ $env.GOOGLE_CHAT_WEBHOOK_URL }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"cardsV2\": [{\n    \"cardId\": \"dailyReport\",\n    \"card\": {\n      \"header\": {\n        \"title\": \"📊 Daily Report\",\n        \"subtitle\": \"{{ $json.timestamp }}\"\n      },\n      \"sections\": [{\n        \"widgets\": [\n          {\n            \"decoratedText\": {\n              \"topLabel\": \"Products Processed\",\n              \"text\": \"{{ $json.processed_count }}\"\n            }\n          },\n          {\n            \"decoratedText\": {\n              \"topLabel\": \"Profitable Products\",\n              \"text\": \"{{ $json.profitable_count }}\"\n            }\n          },\n          {\n            \"decoratedText\": {\n              \"topLabel\": \"Total Contribution Profit\",\n              \"text\": \"{{ $json.total_cp }} PLN\"\n            }\n          }\n        ]\n      }]\n    }\n  }]\n}",
-        "options": {}
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "products",
+        "include": "allFieldsExcept",
+        "fieldsToExclude": ""
       },
-      "id": "gchat-webhook-id",
-      "name": "Send Google Chat Report",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [850, 300],
-      "notes": "Sends formatted card to Google Chat"
-    },
-    {
-      "parameters": {},
-      "id": "error-trigger-id",
-      "name": "Error Trigger",
-      "type": "n8n-nodes-base.errorTrigger",
+      "id": "aggregate-id",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.aggregate",
       "typeVersion": 1,
-      "position": [450, 500]
+      "position": [850, 300],
+      "notes": "Combines all product results into single output"
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ $env.GOOGLE_CHAT_WEBHOOK_URL }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"text\": \"🚨 *Workflow Error*\\n\\nWorkflow: {{ $json.workflow.name }}\\nNode: {{ $json.execution.error.node.name }}\\nMessage: {{ $json.execution.error.message }}\\nTime: {{ $now.toISO() }}\"\n}",
-        "options": {}
+        "jsCode": "const products = $input.first().json.products;\n\n// Calculate summary statistics\nconst totalCP = products.reduce((sum, p) => sum + parseFloat(p.contribution_profit), 0);\nconst profitableCount = products.filter(p => p.is_profitable).length;\nconst p8Count = products.filter(p => p.tier === 'P8').length;\n\n// Group by tier\nconst tierCounts = {};\nproducts.forEach(p => {\n  tierCounts[p.tier] = (tierCounts[p.tier] || 0) + 1;\n});\n\nreturn [{\n  json: {\n    summary: {\n      total_products: products.length,\n      profitable_count: profitableCount,\n      needs_attention_count: p8Count,\n      total_contribution_profit: totalCP.toFixed(2),\n      tier_distribution: tierCounts,\n      report_timestamp: new Date().toISOString()\n    },\n    products: products\n  }\n}];"
       },
-      "id": "gchat-error-id",
-      "name": "Send Error Alert",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [650, 500],
-      "notes": "Alerts on workflow failure"
+      "id": "summary-node-id",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "notes": "Creates final report with summary stats"
     }
   ],
   "connections": {
@@ -128,40 +78,40 @@
       "main": [
         [
           {
-            "node": "List Input Files",
+            "node": "Load Business Config",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "List Input Files": {
+    "Load Business Config": {
       "main": [
         [
           {
-            "node": "Calculate Contribution Profit",
+            "node": "Calculate CP per Product",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Calculate Contribution Profit": {
+    "Calculate CP per Product": {
       "main": [
         [
           {
-            "node": "Send Google Chat Report",
+            "node": "Aggregate Results",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Error Trigger": {
+    "Aggregate Results": {
       "main": [
         [
           {
-            "node": "Send Error Alert",
+            "node": "Generate Summary",
             "type": "main",
             "index": 0
           }
@@ -170,13 +120,12 @@
     }
   },
   "settings": {
-    "executionOrder": "v1",
-    "errorWorkflow": "PeqoqExvdvxhdHZd"
+    "executionOrder": "v1"
   },
   "staticData": null,
   "meta": null,
   "pinData": null,
-  "versionId": "2a382290-a859-4915-8212-a44cc4ae7214",
+  "versionId": "3a482290-a859-4915-8212-a44cc4ae7215",
   "triggerCount": 0,
   "shared": [
     {
