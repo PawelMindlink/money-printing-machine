@@ -169,52 +169,66 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     # --- 5. MSC-ALGO CORE LOGIC (Waterfall) ---
     
     def run_msc_algo(row):
-        # Phase 1: Meta History (Ad-Level History)
+        flags = []
+        
+        # --- PHASE 1: META ADS FILTRATION ---
         if row['meta_purchases'] >= MIN_META_TRANS:
             if row['calc_contribution_profit'] > 0:
-                # Profitable Ads
+                # Profitable
                 if row['meta_revenue'] >= P75_VOL_META and row['calc_contribution_profit'] >= P75_EFF_META:
                     return 1, "PROVEN_STAR"
                 else:
-                    return 2, "PROVEN_CASH_COW"
+                    return 2, "PROVEN_COW"
             else:
-                # Negative History: Ads ran but lost money.
-                # FLAG: This will push us to PRIORITY 3: RE-LAUNCH CANDIDATE in Phase 2
-                pass # Fall through to Phase 2
+                # Unprofitable (CM <= 0)
+                flags.append("META_LOSER")
+                # Fall through to Phase 2
         
-        # Phase 2: Organic LP Potential (Session-Level)
-        has_negative_history = (row['meta_spend'] > 0 and row['calc_contribution_profit'] < 0)
+        # --- PHASE 2: GA4 LANDING PAGE FILTRATION ---
         
         if row['ga4lp_sessions'] >= MIN_ORGANIC_SESSIONS:
             is_high_vol = row['ga4lp_sessions'] >= P75_VOL_GA
             is_high_eff = row['calc_gpps'] >= P75_EFF_GA
             
             if is_high_vol and is_high_eff:
-                if has_negative_history:
-                    return 3, "RE_LAUNCH_CANDIDATE"
+                # Scenario A: High Vol + High Eff
+                if "META_LOSER" in flags:
+                    return 3, "RECOVERY_LAUNCH"
                 else:
-                    return 3, "ORGANIC_STAR"
+                    return 3, "NEW_STAR_LAUNCH"
+            
             elif is_high_vol and not is_high_eff:
-                return 4, "HIGH_TRAFFIC_LOW_CONV"
+                # Scenario B: High Vol + Low Eff -> FIX IT
+                return 99, "FIX_LANDING_PAGE"
+                
             elif not is_high_vol and is_high_eff:
-                return 5, "HIGH_CONV_LOW_TRAFFIC"
+                # Scenario C: Low Vol + High Eff -> SCALE IT
+                return 5, "SCALE_UP"
+                
             else:
-                pass # Fall through to Phase 3
+                # Scenario D: Low Vol + Low Eff -> DOG
+                flags.append("LP_FAILURE")
+                # Fall through to Phase 3
         
-        # Phase 3: Item Demand (Item-Level Demand)
-        # We only check this if the item is a "Product" (implied by feed_id presence)
+        # --- PHASE 3: GA4 ITEM FILTRATION ---
+        
+        # Critical Check: Type == PRODUCT (Implied if we have Item Data)
         if row.get('ga4item_views', 0) >= MIN_ORGANIC_SESSIONS:
             is_high_vol = row['ga4item_views'] >= P75_VOL_ITEM
             is_high_eff = row['calc_gppv'] >= P75_EFF_ITEM
             
             if is_high_vol and is_high_eff:
-                return 6, "HIDDEN_STAR"
+                # Scenario E: Hidden Star
+                return 6, "DIRECT_TO_PDP"
+                
             elif not is_high_vol and is_high_eff:
-                return 7, "HIDDEN_GEM"
-            else:
+                # Scenario F: Hidden Gem
+                return 7, "FEED_DPA"
+                
+            elif is_high_vol and not is_high_eff:
+                # Scenario G: Window Shopping
                 return 8, "IGNORE"
                 
-        # Fallback for unsignificant data
         return 8, "IGNORE"
 
     # Apply Logic

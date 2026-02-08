@@ -29,12 +29,12 @@ We prioritize products based on a **Waterfall Model** (Hierarchy of Proof).
 | Priority | Name | Logic |
 | :--- | :--- | :--- |
 | **1** | **PROVEN STAR** | High Meta Profit (`calc_contribution_profit > 0`) & High Volume (`meta_revenue >= P75`). |
-| **2** | **PROVEN CASH COW** | High Meta Profit (`calc_contribution_profit > 0`) & Moderate Volume. |
-| **3** | **ORGANIC STAR** / **RE-LAUNCH** | High Organic Potential (`ga4lp_sessions >= P75` & `calc_gpps >= P75`). |
-| **4** | **HIGH TRAFFIC / LOW CONV** | High `ga4lp_sessions`, but low efficiency (Offer/LP problem). |
-| **5** | **HIGH CONV / LOW TRAFFIC** | Low `ga4lp_sessions`, but high efficiency (`calc_gpps`). |
-| **6** | **HIDDEN STAR** | High `ga4item_views` & `calc_gppv`, but no LP traffic. |
-| **7** | **HIDDEN GEM** | Moderate `ga4item_views`, but high efficiency (`calc_gppv`). |
+| **2** | **PROVEN COW** | High Meta Profit (`calc_contribution_profit > 0`) & Moderate Volume. |
+| **3** | **LAUNCH** / **RECOVERY** | High Organic Potential (`ga4lp_sessions >= P75` & `calc_gpps >= P75`). |
+| **5** | **SCALE UP** | Low Organic Traffic, but high efficiency (`calc_gpps`). |
+| **6** | **DIRECT-TO-PDP** | High `ga4item_views` & `calc_gppv`, but no LP traffic. |
+| **7** | **FEED / DPA** | Moderate Item Interest, but high GPPV. |
+| **99** | **FIX LANDING PAGE** | High `ga4lp_sessions`, but low efficiency (Offer/LP problem). |
 | **8** | **IGNORE** | Low activity / Insignificant data. |
 
 *(Note: Thresholds for P75 (Top 25%) are calculated dynamically per client.)*
