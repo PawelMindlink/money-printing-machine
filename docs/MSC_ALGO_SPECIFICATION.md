@@ -72,26 +72,23 @@ Zmienna stanu: `FLAGS = []`.
 
 ---
 
-### FAZA 3: FILTR GA4 ITEM BREAKDOWN (Weryfikacja Produktu)
+### KROK 3: ANALIZA GA4 ITEMS (Popyt)
 
-**Warunek:** `Item_Views` >= `MIN_ORGANIC_SESSIONS`.
+**Wejście:** Dane GA4 Item (Scope: Item).
 
-1. **CZY `Item_Views` >= `MIN_ORGANIC_SESSIONS`?**
-    * **NIE:** -> **RETURN: PRIORYTET 8 (IGNORE)**.
+1. **CZY `Entity_Type` == "PRODUCT"?**
+    * **NIE:** $\rightarrow$ **RETURN: PRIORYTET 8 (IGNORE)** (Kategorie i strony główne nie podlegają analizie produktowej).
     * **TAK:**
-        * `IS_HIGH_VOL` = `Item_Views` >= `P75_VOL_ITEM`
-        * `IS_HIGH_EFF` = `GPPV` >= `P75_EFF_ITEM`
-
-        * **SCENARIUSZ E (High Vol + High Eff):**
-            * -> **RETURN: PRIORYTET 6 (DIRECT-TO-PDP)** (Hidden Star)
-
-        * **SCENARIUSZ F (Low Vol + High Eff):**
-            * -> **RETURN: PRIORYTET 7 (FEED / DPA)** (Hidden Gem)
-
-        * **SCENARIUSZ G (High Vol + Low Eff):**
-            * -> **RETURN: PRIORYTET 8 (IGNORE / WINDOW SHOPPING)**
-
-        * Inne przypadki -> **RETURN: PRIORYTET 8 (IGNORE)**
+        2.  **CZY `ga4item_views` >= `MIN_ORGANIC_SESSIONS`?**
+            ***NIE:** $\rightarrow$ **RETURN: PRIORYTET 8 (IGNORE)**.
+            *   **TAK:**
+                *`IS_HIGH_VOL` = `ga4item_views` >= `P75_VOL_ITEM`
+                *   `IS_HIGH_EFF` = `GPPV` >= `P75_EFF_ITEM`
+                *
+                *   Jeżeli `IS_HIGH_VOL` ORAZ `IS_HIGH_EFF` $\rightarrow$ **RETURN: PRIORYTET 6 (DIRECT-TO-PDP)** (Hidden Star).
+                *Jeżeli `NOT IS_HIGH_VOL` ORAZ `IS_HIGH_EFF` $\rightarrow$ **RETURN: PRIORYTET 7 (FEED / DPA)** (Hidden Gem).
+                *   Jeżeli `IS_HIGH_VOL` ORAZ `NOT IS_HIGH_EFF` $\rightarrow$ **RETURN: PRIORYTET 8 (IGNORE / WINDOW SHOPPING)**.
+                *   Inne przypadki $\rightarrow$ **RETURN: PRIORYTET 8 (IGNORE)**.
 
 ---
 

@@ -98,12 +98,16 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         if 'meta_spend' in df.columns:
             mask_syn = (df['feed_id'].isna()) & (df['meta_spend'] > 0)
             if mask_syn.sum() > 0:
-                def derive_title(url): return f"Ad: {str(url).split('/')[-1][:50]}" if pd.isna(url) == False else "Unknown Ad"
-                df.loc[mask_syn, 'feed_title'] = df.loc[mask_syn, 'norm_url'].apply(derive_title)
-                df.loc[mask_syn, 'feed_category'] = 'General / Category'
-                df.loc[mask_syn, 'feed_id'] = df.loc[mask_syn, 'norm_url'].apply(lambda x: f"SYN-{hash(x) % 10000}")
-                df.loc[mask_syn, 'feed_price_str'] = '0 PLN'
                 df.loc[mask_syn, 'feed_brand'] = brand
+                df.loc[mask_syn, 'calc_entity_type'] = 'CATEGORY_OR_AD'
+            
+            # Non-synthetic are products
+            df.loc[~df['feed_id'].astype(str).str.startswith('SYN-'), 'calc_entity_type'] = 'PRODUCT'
+            df['calc_entity_type'] = df['calc_entity_type'].fillna('PRODUCT') # Fallback
+        else:
+            df['calc_entity_type'] = 'PRODUCT'
+    else:
+        df['calc_entity_type'] = 'PRODUCT'
 
     # --- 3. PRE-PROCESSING & FINANCIALS (Phase O) ---
     # Fill NA
@@ -212,7 +216,10 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         
         # --- PHASE 3: GA4 ITEM FILTRATION ---
         
-        # Critical Check: Type == PRODUCT (Implied if we have Item Data)
+        # Critical Check: Only analyze ITEM data for actual PRODUCTS
+        if row.get('calc_entity_type') != "PRODUCT":
+            return 8, "IGNORE"
+
         if row.get('ga4item_views', 0) >= MIN_ORGANIC_SESSIONS:
             is_high_vol = row['ga4item_views'] >= P75_VOL_ITEM
             is_high_eff = row['calc_gppv'] >= P75_EFF_ITEM

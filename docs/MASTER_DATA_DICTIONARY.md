@@ -83,5 +83,6 @@
 
 | Metric | Value |
 | :--- | :--- |
-| `calc_priority` | 1-7 (Integer). The MSC-ALGO Priority. |
-| `calc_segment` | System Name (e.g., `PROVEN_STAR`, `HIDDEN_GEM`). |
+| `calc_priority` | 1-99 (Integer). The MSC-ALGO Priority. |
+| `calc_segment` | System Name (e.g., `PROVEN_STAR`, `FIX_LANDING_PAGE`). |
+| `calc_entity_type` | `PRODUCT` or `CATEGORY_OR_AD`. Used for filtering logic. |
