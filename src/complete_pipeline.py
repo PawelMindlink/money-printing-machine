@@ -248,8 +248,33 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     df['calc_net_price'] = df['feed_price_numeric'] / (1 + vat)
     df['calc_bid_cap'] = df['calc_net_price'] * df['base_gross_margin']
     df['calc_cost_cap'] = df['calc_bid_cap'] * 0.7
-    df['calc_break_even_roas'] = 1 / df['base_gross_margin']
+    df['calc_break_even_roas'] = 1 / df['base_gross_margin'].replace(0, float('inf'))
     df['calc_roas'] = df['meta_revenue'] / df['meta_spend'].replace(0, 1)
+    
+    # 7. MISSING METRICS (per DATA_DICTIONARY_FINAL.md)
+    # Classification columns
+    df['meta_class'] = df.apply(lambda r: bl.classify_meta_ads(r['calc_contribution_profit'], r['meta_spend']), axis=1)
+    
+    # GA4 Classification thresholds
+    ga4_thresholds = {
+        'min_activity': MIN_ORGANIC_SESSIONS,
+        'trans_75': get_p75(df['ga4lp_purchases']),
+        'arpu_75': get_p75(df['calc_gpps'])
+    }
+    df['ga4_class'] = df.apply(lambda r: bl.classify_ga4_product(
+        r['ga4lp_sessions'], r['ga4lp_purchases'], r['calc_gpps'], ga4_thresholds
+    ), axis=1)
+    
+    # Financial metrics
+    df['critical_roas'] = df['calc_bid_cap'].apply(lambda x: bl.calculate_critical_roas(x))
+    df['scaling_roas'] = df['base_gross_margin'].apply(lambda m: bl.calculate_scaling_roas(vat, m))
+    
+    # Efficiency metrics
+    df['arpu'] = df['ga4lp_revenue'] / df.get('ga4lp_users', df['ga4lp_sessions']).replace(0, 1)
+    df['arpiv'] = df.apply(lambda r: bl.calculate_arpiv(r.get('ga4item_revenue', 0), r.get('ga4item_views', 0)), axis=1)
+    
+    # Product flag
+    df['is_product'] = df['calc_entity_type'] == 'PRODUCT'
 
     # --- OUTPUT ---
     out_dir = os.path.join(output_dir, brand)
@@ -259,16 +284,21 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     df.sort_values(by=['calc_priority', 'calc_contribution_profit'], ascending=[True, False], inplace=True)
     
     final_cols = [
-        'feed_id', 'feed_title', 'feed_brand', 'feed_category', 'feed_price_numeric',
-        # Classification
-        'calc_priority', 'calc_segment', 'base_gross_margin',
-        # Key Drivers
-        'calc_contribution_profit', 'calc_gpps', 'calc_cr', 'calc_gppv',
-        # Caps
-        'calc_bid_cap', 'calc_cost_cap',
-        # Drill Down
-        'meta_spend', 'meta_revenue', 'meta_purchases',
+        # Core Identifiers
+        'feed_id', 'feed_title', 'feed_brand', 'feed_category', 'feed_price_numeric', 'is_product',
+        # Classification (MSC-ALGO + Legacy)
+        'calc_priority', 'calc_segment', 'meta_class', 'ga4_class',
+        # Margin & Profit
+        'base_gross_margin', 'calc_contribution_profit',
+        # Efficiency Metrics
+        'calc_gpps', 'calc_cr', 'calc_gppv', 'arpu', 'arpiv',
+        # Financial Caps & ROAS
+        'calc_bid_cap', 'calc_cost_cap', 'critical_roas', 'scaling_roas', 'calc_break_even_roas',
+        # Meta Ads Data
+        'meta_spend', 'meta_revenue', 'meta_purchases', 'calc_roas',
+        # GA4 Landing Page Data
         'ga4lp_sessions', 'ga4lp_revenue',
+        # GA4 Item Data  
         'ga4item_views', 'ga4item_revenue'
     ]
     

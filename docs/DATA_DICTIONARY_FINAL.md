@@ -1,58 +1,63 @@
 # Data Dictionary (Final Output)
 
-This document describes the columns present in the final output file (e.g., `Iiyama_Landing_Page_Final.csv`).
+This document describes the columns present in the final output file (e.g., `Iiyama_Growth_Opportunities.csv`).
 
 ## Core Identifiers
 
 | Column | Source | Description |
 | :--- | :--- | :--- |
-| **id** | Product Feed (`g:id`) | Unique Product Identifier. |
-| **title** | Product Feed (`g:title`) | Name of the product (or Ad Name for synthetic items). |
-| **brand** | Product Feed / Config | Brand name. |
-| **category** | Product Feed | Product category (Mapped from `g:google_product_category` or `g:product_type`). |
-| **price** | Product Feed (`g:price`) | Raw price string (e.g., "1200 PLN"). |
-| **is_product** | Calculated | `TRUE` if URL pattern matches a product page, `FALSE` otherwise. |
+| **feed_id** | Product Feed (`g:id`) | Unique Product Identifier. |
+| **feed_title** | Product Feed (`g:title`) | Name of the product (or Ad Name for synthetic items). |
+| **feed_brand** | Product Feed / Config | Brand name. |
+| **feed_category** | Product Feed | Product category (Mapped from `g:google_product_category` or `g:product_type`). |
+| **feed_price_numeric** | Product Feed (`g:price`) | Numeric price value (e.g., `1200.0`). |
+| **is_product** | Calculated | `TRUE` if entity is a product, `FALSE` for categories/ads. |
 
 ## Logic & Classification
 
 | Column | Source | Description |
 | :--- | :--- | :--- |
-| **priority** | Calculated | Final Action Priority (P1-P8). Determines if we scale, fix, or ignore. |
+| **calc_priority** | MSC-ALGO | Numeric priority (1=PROVEN_STAR, 2=PROVEN_COW, 3=LAUNCH, 5=SCALE_UP, 6=DIRECT_TO_PDP, 7=FEED_DPA, 8=IGNORE, 99=FIX_LP). |
+| **calc_segment** | MSC-ALGO | Text label: `PROVEN_STAR`, `PROVEN_COW`, `NEW_STAR_LAUNCH`, `RECOVERY_LAUNCH`, `SCALE_UP`, `DIRECT_TO_PDP`, `FEED_DPA`, `FIX_LANDING_PAGE`, `IGNORE`. |
 | **meta_class** | Calculated | `Profitable`, `Unprofitable`, `No Ads`. Based on Contribution Profit. |
-| **ga4_class** | Calculated | `Star`, `Cash Cow`, `Hidden Gem`, `Slacker`. Based on organic performance. |
-| **price_cluster** | Calculated | `TOP X PLN`. Groups products into price tiers within their margin group. |
-| **gross_margin** | Config (`business_logic.json`) | Estimated gross margin rate based on category/title overrides. |
+| **ga4_class** | Calculated | `Star`, `Cash Cow`, `Hidden Gem`, `Slacker`. Based on organic performance thresholds. |
 
 ## Financial Metrics
 
 | Column | Source | Description |
 | :--- | :--- | :--- |
-| **contribution_profit** | Calculated | `(MetaRev / (1+VAT) * Margin * Frequency) - MetaSpend`. The "North Star" metric. |
-| **bid_cap** | Calculated | `Price / (1+VAT) * Margin`. Max CPA to break even. |
-| **cost_cap** | Calculated | `BidCap * 0.7`. Recommended Cost Cap setting (30% safety buffer). |
+| **base_gross_margin** | Config (`business_logic.json`) | Gross margin rate (e.g., 0.45 = 45%). |
+| **calc_contribution_profit** | Calculated | `(MetaRev / (1+VAT) * Margin) - MetaSpend`. The "North Star" metric. |
+| **calc_bid_cap** | Calculated | `Price / (1+VAT) * Margin`. Max CPA to break even. |
+| **calc_cost_cap** | Calculated | `BidCap * 0.7`. Recommended Cost Cap setting (30% safety buffer). |
 | **critical_roas** | Calculated | `1 / BidCap`. Minimum ROAS to be profitable. |
-| **scaling_roas** | Calculated | `1 / ((1+VAT) * Margin * Frequency)`. Target ROAS for scaling. |
+| **scaling_roas** | Calculated | `BreakEvenROAS * 1.2`. Target ROAS for scaling. |
+| **calc_break_even_roas** | Calculated | `1 / Margin`. Minimum ROAS to break even. |
+| **calc_roas** | Calculated | `meta_revenue / meta_spend`. Actual ROAS from Meta Ads. |
+
+## Efficiency Metrics
+
+| Column | Source | Description |
+| :--- | :--- | :--- |
+| **calc_gpps** | Calculated | `GrossProfit(LP) / Sessions`. Gross Profit Per Session. |
+| **calc_cr** | Calculated | `Purchases / Sessions`. Conversion Rate. |
+| **calc_gppv** | Calculated | `GrossProfit(Item) / ItemViews`. Gross Profit Per View. |
+| **arpu** | Calculated | `Revenue / Users`. Average Revenue Per User. |
+| **arpiv** | Calculated | `ItemRevenue / ItemViews`. Average Revenue Per Item View. |
+
+## Meta Ads Data
+
+| Column | Source | Description |
+| :--- | :--- | :--- |
 | **meta_spend** | Meta Ads CSV | Total ad spend for this URL. |
 | **meta_revenue** | Meta Ads CSV | Total purchase conversion value attributed to ads. |
 | **meta_purchases** | Meta Ads CSV | Number of purchases attributed to ads. |
-| **arpu** | Calculated | `Revenue / Users`. Average Revenue Per User. |
-| **arpiv** | Calculated | `Item Revenue / Items Viewed`. Revenue per product view (independent of LP traffic). |
-| **calc_frequency** | Calculated | `Purchases / First Time Purchasers`. Average purchases per customer. |
 
 ## GA4 Performance
 
 | Column | Source | Description |
 | :--- | :--- | :--- |
-| **Sessions** | GA4 API/CSV | Total sessions on this landing page. |
-| **Users** | GA4 API/CSV | Total Active Users on this landing page. |
-| **Purchases** | GA4 API/CSV | Total purchases (Organic + Paid). |
-| **Purchase revenue** | GA4 API/CSV | Total revenue (Organic + Paid). |
-
-## Technical / Debug
-
-| Column | Source | Description |
-| :--- | :--- | :--- |
-| **link** | Product Feed | Original Product URL. |
-| **image_link** | Product Feed | URL to product image. |
-| **gtin** | Product Feed | Global Trade Item Number. |
-| **mpn** | Product Feed | Manufacturer Part Number. |
+| **ga4lp_sessions** | GA4 API/CSV | Total sessions on this landing page. |
+| **ga4lp_revenue** | GA4 API/CSV | Total revenue from this landing page. |
+| **ga4item_views** | GA4 API/CSV | Total item views (product detail page views). |
+| **ga4item_revenue** | GA4 API/CSV | Total item revenue. |
