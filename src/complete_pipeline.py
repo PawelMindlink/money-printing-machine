@@ -1,3 +1,4 @@
+
 import pandas as pd
 import os
 import re
@@ -7,6 +8,7 @@ import sys
 import json
 from pathlib import Path
 from ga4_api_client import fetch_ga4_data, fetch_ga4_items
+import business_logic_layer as bl
 
 # HARDCODED PATH TO CREDENTIALS (for n8n/local execution) - Overridable via Env Var
 GA4_CREDS_PATH = os.environ.get("GA4_CREDS_PATH", r"c:\Users\Paweł\Documents\GitHub\ICP Research\Core\Configs\ga4_credentials.json")
@@ -14,44 +16,6 @@ GA4_CREDS_PATH = os.environ.get("GA4_CREDS_PATH", r"c:\Users\Paweł\Documents\Gi
 # ============================================================================
 # UTILS
 # ============================================================================
-
-def normalize_url(url):
-    """Normalize URL for matching"""
-    if pd.isna(url) or url == '':
-        return ''
-    url = str(url).lower().strip()
-    url = re.sub(r'^https?://', '', url)
-    url = re.sub(r'^www\.', '', url)
-    if '?' in url:
-        url = url.split('?')[0]
-    return url.rstrip('/')
-
-def extract_path(url):
-    """Extract path from URL for relative matching"""
-    if pd.isna(url) or url == '':
-        return ''
-    url = str(url).lower().strip()
-    url = re.sub(r'^https?://', '', url)
-    url = re.sub(r'^www\.', '', url)
-    if '?' in url:
-        url = url.split('?')[0]
-    
-    if '/' in url:
-        if not url.startswith('/'):
-            path = url[url.find('/'):]
-        else:
-            path = url
-    else:
-        path = '/' + url
-        
-    path = path.rstrip('/')
-    if not path.startswith('/'):
-        path = '/' + path
-        
-    # Standardize HTML extensions
-    path = path.replace('.facebookads.html', '.html')
-    path = path.replace('.facebook.html', '.html')
-    return path
 
 def load_ga4_csv(filepath):
     """Load GA4 CSV by dynamically finding the header row"""
@@ -142,8 +106,8 @@ def parse_product_feed_xml(filepath):
             # Availability
             'availability': item.findtext('g:availability', namespaces=ns),
         }
-        p['norm_url'] = normalize_url(p['link'])
-        p['path_key'] = extract_path(p['link'])
+        p['norm_url'] = bl.normalize_url(p['link'])
+        p['path_key'] = bl.extract_path(p['link'])
         products.append(p)
         
     return pd.DataFrame(products)
@@ -164,8 +128,6 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         print(f"Error: Brand configuration for {brand} not found in business_logic.json!")
         return None
     
-    tier_rules = full_config.get('tier_rules', {}).get('ga4', {})
-
     # 2. Load Feed
     feed_path = os.path.join(input_dir, brand, f"{brand_l}_product_feed.xml")
     df = parse_product_feed_xml(feed_path)
@@ -251,7 +213,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         lp_col = next((c for c in ['Landing page', 'Landing page + query string', 'landingPage'] if c in lp_df.columns), None)
         
         if lp_col:
-            lp_df['path_key'] = lp_df[lp_col].apply(extract_path)
+            lp_df['path_key'] = lp_df[lp_col].apply(bl.extract_path)
             # Ensure numeric columns for aggregation
             # 'Purchase revenue' comes from API (renamed from Item revenue in client) or CSV
             cols_to_sum = ['Sessions', 'Purchases', 'First time purchasers', 'Purchase revenue']
@@ -282,7 +244,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     meta_path = os.path.join(input_dir, brand, f"{brand_l}_meta_ads.csv")
     if os.path.exists(meta_path):
         meta_df = pd.read_csv(meta_path)
-        meta_df['norm_url'] = meta_df['Link (ad settings)'].apply(normalize_url)
+        meta_df['norm_url'] = meta_df['Link (ad settings)'].apply(bl.normalize_url)
         
         # Safe aggregation of potential missing columns
         agg_dict = {
@@ -291,14 +253,17 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
             'Purchases conversion value': 'sum'
         }
         
-        # Check for optional columns (Bid Cap, etc.) - Just for pass-through if needed, 
-        # but for aggregation we stick to core metrics.
-        # If we want to keep Bid Cap per URL, we'd need to take 'max' or 'mean', but these are per Ad.
-        # Currently we aggregate by URL. We will drop these detailed columns in aggregation 
-        # unless we want to keep them. For now, we only aggregate financial metrics.
-        
+        # Only aggregate existing cols
+        agg_dict = {k:v for k,v in agg_dict.items() if k in meta_df.columns}
+
         meta_agg = meta_df.groupby('norm_url').agg(agg_dict).reset_index()
-        meta_agg.columns = ['norm_url', 'meta_spend', 'meta_purchases', 'meta_revenue']
+        # Rename strictly
+        rename_map = {
+            'Amount spent (PLN)': 'meta_spend',
+            'Purchases': 'meta_purchases',
+            'Purchases conversion value': 'meta_revenue'
+        }
+        meta_agg.rename(columns=rename_map, inplace=True)
         
         # Use OUTER JOIN to include Ads that don't match Feed (Category/General)
         df = pd.merge(df, meta_agg, on='norm_url', how='outer')
@@ -306,109 +271,71 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         
         # --- SYNTHETIC PRODCUT CREATION FOR UNMATCHED ADS ---
         # Rows with meta_spend > 0 but no 'id' (Product ID)
-        mask_synthetic = (df['id'].isna()) & (df['meta_spend'] > 0)
-        
-        if mask_synthetic.sum() > 0:
-            print(f"Creating {mask_synthetic.sum()} Synthetic Products for Unmatched Ads (Category Pages)")
+        if 'meta_spend' in df.columns:
+            mask_synthetic = (df['id'].isna()) & (df['meta_spend'] > 0)
             
-            # Derive Title from URL
-            def derive_title(url):
-                if pd.isna(url): return "Unknown Ad"
-                # Remove protocol/domain
-                path = url.split('/')[-1]
-                path = path.replace('-', ' ').replace('.html', '').replace('_', ' ')
-                return f"Ad: {path.title()[:50]}"
-            
-            df.loc[mask_synthetic, 'title'] = df.loc[mask_synthetic, 'norm_url'].apply(derive_title)
-            df.loc[mask_synthetic, 'category'] = 'General / Category'
-            df.loc[mask_synthetic, 'id'] = df.loc[mask_synthetic, 'norm_url'].apply(lambda x: f"SYN-{hash(x) % 10000}")
-            df.loc[mask_synthetic, 'price'] = '0 PLN' # Set safe defaults
-            df.loc[mask_synthetic, 'brand'] = brand
+            if mask_synthetic.sum() > 0:
+                print(f"Creating {mask_synthetic.sum()} Synthetic Products for Unmatched Ads (Category Pages)")
+                
+                # Derive Title from URL
+                def derive_title(url):
+                    if pd.isna(url): return "Unknown Ad"
+                    path = url.split('/')[-1]
+                    path = path.replace('-', ' ').replace('.html', '').replace('_', ' ')
+                    return f"Ad: {path.title()[:50]}"
+                
+                df.loc[mask_synthetic, 'title'] = df.loc[mask_synthetic, 'norm_url'].apply(derive_title)
+                df.loc[mask_synthetic, 'category'] = 'General / Category'
+                df.loc[mask_synthetic, 'id'] = df.loc[mask_synthetic, 'norm_url'].apply(lambda x: f"SYN-{hash(x) % 10000}")
+                df.loc[mask_synthetic, 'price'] = '0 PLN' # Set safe defaults
+                df.loc[mask_synthetic, 'brand'] = brand
             
     # 6. CALCULATIONS & CLASSIFICATION
+    if 'meta_spend' not in df.columns: df['meta_spend'] = 0
+    if 'meta_revenue' not in df.columns: df['meta_revenue'] = 0
+    
     vat = config.get('vat_rate', 0.23)
     margin_cfg = config.get('margin_config', {})
     default_margin = margin_cfg.get('default_rate', 0.1) 
     category_overrides = margin_cfg.get('category_overrides', [])
     
     # Calculate Frequency 
+    if 'Purchases' not in df.columns: df['Purchases'] = 0
+    if 'First time purchasers' not in df.columns: df['First time purchasers'] = 0
+    
     df['calc_frequency'] = df['Purchases'].fillna(0) / df['First time purchasers'].replace(0, 1)
     
-    # Apply Margin Mapping (Robust partial match)
-    def get_margin(row):
-        cat_sources = [row.get('product_type'), row.get('category'), row.get('title')]
-        cat_str = " ".join([str(c).lower() for c in cat_sources if pd.notna(c)])
-        
-        for override in category_overrides:
-            if override['category'].lower() in cat_str:
-                return override['rate']
-        return default_margin
-
-    df['gross_margin'] = df.apply(get_margin, axis=1)
+    # Apply Margin Mapping
+    df['gross_margin'] = df.apply(lambda row: bl.calculate_gross_margin(row, default_margin, category_overrides), axis=1)
     
-    # PRICE CLUSTERING (Formatted Labels)
+    # PRICE CLUSTERING
     df['price_numeric'] = pd.to_numeric(df['price'].astype(str).str.replace(' PLN', '').str.replace(',', '.').str.replace(' ', ''), errors='coerce').fillna(0)
     
-    SPREAD = 0.5 
-    
-    def assign_price_clusters_pretty(sub_df):
-        sub_df = sub_df.sort_values('price_numeric', ascending=False).copy()
-        clusters = []
-        cluster_leader_price = None
-        
-        # We need a stable identifier for the cluster leader to name it
-        # Actually simplest is to run logic, assign IDs, then map IDs to Labels
-        
-        # Step 1: Assign IDs
-        temp_clusters = []
-        curr_id = 0
-        curr_leader = None
-        
-        for price in sub_df['price_numeric']:
-            if curr_leader is None:
-                curr_leader = price
-                curr_id = 1
-            
-            threshold = curr_leader * (1 - SPREAD)
-            if price < threshold:
-                curr_id += 1
-                curr_leader = price
-            
-            temp_clusters.append(curr_id)
-            
-        sub_df['temp_cluster_id'] = temp_clusters
-        
-        # Step 2: Create Labels based on Max Price in Cluster
-        id_to_label = {}
-        for cid in sub_df['temp_cluster_id'].unique():
-            max_p = sub_df[sub_df['temp_cluster_id'] == cid]['price_numeric'].max()
-            id_to_label[cid] = f"TOP {int(max_p)} PLN"
-            
-        return sub_df['temp_cluster_id'].map(id_to_label)
-
     # Apply per Margin Group
     df['price_cluster'] = "Other"
     for margin in df['gross_margin'].unique():
         mask = df['gross_margin'] == margin
         if mask.sum() > 0:
-            clusters = assign_price_clusters_pretty(df.loc[mask])
+            clusters = bl.assign_price_cluster(df.loc[mask])
             df.loc[mask, 'price_cluster'] = clusters
 
     # CP Calculation
-    df['contribution_profit'] = (
-        (df['meta_revenue'].fillna(0) / (1+vat)) * df['gross_margin'] * df['calc_frequency']
-    ) - df['meta_spend'].fillna(0)
+    df['contribution_profit'] = bl.calculate_contribution_profit(
+        df['meta_revenue'].fillna(0),
+        vat,
+        df['gross_margin'],
+        df['calc_frequency'],
+        df['meta_spend'].fillna(0)
+    )
     
     # Meta Ads Classification
-    def get_meta_class(row):
-        if pd.isna(row['meta_spend']) or row['meta_spend'] == 0: return 'No Ads'
-        return 'Profitable' if row['contribution_profit'] > 0 else 'Unprofitable'
-    
-    df['meta_class'] = df.apply(get_meta_class, axis=1)
+    df['meta_class'] = df.apply(lambda row: bl.classify_meta_ads(row['contribution_profit'], row['meta_spend']), axis=1)
     
     # ARPU
     rev_source = 'Purchase revenue' if 'Purchase revenue' in df.columns else 'Item revenue'
     user_col = 'Users' if 'Users' in df.columns else 'Sessions'
+    if rev_source not in df.columns: df[rev_source] = 0
+    if user_col not in df.columns: df[user_col] = 1
     
     df['arpu'] = df[rev_source].fillna(0) / df[user_col].replace(0, pd.NA)
     df['arpu'] = df['arpu'].fillna(0)
@@ -416,54 +343,66 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     # GA4 Classification
     sess_col = 'Sessions'
     if sess_col not in df.columns: df[sess_col] = 0
-    min_activity = df[sess_col].quantile(0.25) if not df.empty else 0
     
-    trans_col = 'Purchases'
-    arpu_col = 'arpu'
-    
+    # Calculate thresholds
+    # We need to replicate non_zero_quantile logic or exposing it in BL
+    # For now, let's keep it here but using quantile
     def non_zero_quantile(series, q=0.75):
         valid = series[series > 0]
         if valid.empty: return 0
         return valid.quantile(q)
         
+    trans_col = 'Purchases'
+    arpu_col = 'arpu'
+    
     trans_75 = non_zero_quantile(df[trans_col], 0.75)
     arpu_75 = non_zero_quantile(df[arpu_col], 0.75)
-    arpu_median = non_zero_quantile(df[arpu_col], 0.50)
+    
+    thresholds = {
+        'min_activity': df[sess_col].quantile(0.25) if not df.empty else 0,
+        'trans_75': trans_75,
+        'arpu_75': arpu_75
+    }
     
     print(f"Classification Thresholds (Active Products P75): Trans≥{trans_75:.0f}, ARPU≥{arpu_75:.2f}")
     
-    def get_ga4_class(row):
-        if row.get(sess_col, 0) < min_activity:
-            return 'Slacker'
-
-        trans = row[trans_col] if not pd.isna(row[trans_col]) else 0
-        arpu = row[arpu_col] if not pd.isna(row[arpu_col]) else 0
-
-        is_high_trans = trans >= trans_75 and trans > 0
-        is_high_arpu = arpu >= arpu_75 and arpu > 0 
-        
-        if is_high_trans:
-            return 'Star' if is_high_arpu else 'Cash Cow'
-        else:
-            return 'Hidden Gem' if is_high_arpu else 'Slacker'
-        
-    df['ga4_class'] = df.apply(get_ga4_class, axis=1)
+    df['ga4_class'] = df.apply(lambda row: bl.classify_ga4_product(
+        row.get(sess_col, 0),
+        row.get(trans_col, 0),
+        row.get(arpu_col, 0),
+        thresholds
+    ), axis=1)
 
     # Priority Assignment
-    def get_priority(row):
-        ga4 = row['ga4_class']
-        meta = row['meta_class']
-        
-        if ga4 == 'Star' and meta == 'Profitable': return 'P1'
-        if ga4 == 'Cash Cow' and meta == 'Profitable': return 'P2'
-        if ga4 == 'Hidden Gem' and meta == 'Profitable': return 'P3'
-        if ga4 == 'Star' and meta in ['No Ads', 'Unprofitable']: return 'P4'
-        if ga4 == 'Cash Cow' and meta in ['No Ads', 'Unprofitable']: return 'P5'
-        if ga4 == 'Hidden Gem' and meta == 'No Ads': return 'P6'
-        if ga4 in ['Ignore', 'Slacker'] and meta == 'Profitable': return 'P7'
-        return 'P8'
-
-    df['priority'] = df.apply(get_priority, axis=1)
+    df['priority'] = df.apply(lambda row: bl.determine_priority(row['ga4_class'], row['meta_class']), axis=1)
+    
+    # =================
+    # NEW METRICS (v2.0)
+    # =================
+    
+    # IsProduct Flag
+    df['is_product'] = df.apply(lambda row: bl.is_product_page(row.get('link', ''), row.get('id', None)), axis=1)
+    
+    # Bid Cap & Cost Cap
+    df['bid_cap'] = df.apply(lambda row: bl.calculate_bid_cap(row['price_numeric'], vat, row['gross_margin']), axis=1)
+    df['cost_cap'] = df['bid_cap'].apply(lambda bc: bl.calculate_cost_cap(bc))
+    
+    # ROAS Metrics
+    df['critical_roas'] = df['bid_cap'].apply(lambda bc: bl.calculate_critical_roas(bc))
+    df['scaling_roas'] = df.apply(
+        lambda row: bl.calculate_scaling_roas(vat, row['gross_margin'], row['calc_frequency'] if row['calc_frequency'] > 0 else 1),
+        axis=1
+    )
+    
+    # ARPIV (if items data available)
+    if 'Items viewed' in df.columns and 'Item revenue' in df.columns:
+        df['arpiv'] = df.apply(lambda row: bl.calculate_arpiv(row['Item revenue'], row['Items viewed']), axis=1)
+    else:
+        df['arpiv'] = 0.0
+    
+    # Ensure Users column exists for output
+    if 'Users' not in df.columns:
+        df['Users'] = df.get('Sessions', 0)
     
     # Save Results
     out_dir = os.path.join(output_dir, brand)
@@ -488,3 +427,15 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     
     skipped = df[df['priority'] == 'P8']
     skipped.to_csv(os.path.join(out_dir, f"{brand}_Produkty_Pominięte.csv"), index=False)
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        brand_arg = sys.argv[1]
+        
+        # Load Config
+        with open("business_logic.json", "r", encoding="utf-8") as f:
+            config = json.load(f)
+            
+        run_pipeline(brand_arg, "Input", "Output", config)
+    else:
+        print("Usage: python complete_pipeline.py <BrandName>")
