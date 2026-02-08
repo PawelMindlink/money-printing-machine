@@ -75,17 +75,26 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     if not lp_df.empty:
         lp_col = next((c for c in ['Landing page', 'Landing page + query string', 'landingPage'] if c in lp_df.columns), None)
         if lp_col:
-            lp_df['path_key'] = lp_df[lp_col].apply(bl.extract_path)
-            lp_map = {'Sessions': 'ga4lp_sessions', 'Users': 'ga4lp_users', 'Purchases': 'ga4lp_purchases', 'Purchase revenue': 'ga4lp_revenue'}
+            lp_map = {
+                'Sessions': 'ga4lp_sessions', 
+                'Users': 'ga4lp_users', 
+                'Purchases': 'ga4lp_purchases', 
+                'Purchase revenue': 'ga4lp_revenue',
+                'First time purchasers': 'ga4lp_first_time_purchasers'
+            }
             if 'Purchase revenue' not in lp_df.columns:
                  rev_col = next((c for c in lp_df.columns if 'revenue' in c.lower() and 'purchase' in c.lower()), None)
                  if rev_col: lp_df.rename(columns={rev_col: 'Purchase revenue'}, inplace=True)
+            
+            # Map columns
             lp_df.rename(columns=lambda c: lp_map.get(c, c), inplace=True)
-            lp_df.rename(columns=lambda c: lp_map.get(c, c), inplace=True)
+            
+            # Add path_key
+            lp_df['path_key'] = lp_df[lp_col].apply(bl.extract_path)
+            
+            # Aggregate
             aggs = {c: 'sum' for c in lp_map.values() if c in lp_df.columns}
             lp_agg = lp_df.groupby('path_key').agg(aggs).reset_index()
-            # DEFECT FIX: Do NOT merge yet. Merge after Meta logic to catch synthetic pages.
-            # df = pd.merge(df, lp_agg, on='path_key', how='left')
 
     # --- DIMENSION 4: META ADS (The Check) ---
     meta_path = os.path.join(input_dir, brand, f"{brand_l}_meta_ads.csv")
@@ -190,6 +199,9 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     
     # CR (LP) - Conversion Rate
     df['calc_cr'] = df.apply(lambda row: bl.calculate_cr(row['ga4lp_purchases'], row['ga4lp_sessions']), axis=1)
+
+    # Frequency (LP) - Purchases per First Time Purchaser
+    df['calc_frequency'] = df.apply(lambda row: bl.calculate_frequency(row['ga4lp_purchases'], row.get('ga4lp_first_time_purchasers', 0)), axis=1)
     
     # GPPV (Item) - Gross Profit Per View
     df['calc_gppv'] = df.apply(lambda row: bl.calculate_gppv(row['calc_gross_profit_item'], row.get('ga4item_views', 0)), axis=1)
@@ -265,7 +277,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
             
             elif is_high_vol and not is_high_eff:
                 # Scenario B: High Vol + Low Eff -> FIX IT
-                return 99, "FIX_LANDING_PAGE", "High traffic, low conversion"
+                return 4, "FIX_LANDING_PAGE", "High traffic, low conversion"
                 
             elif not is_high_vol and is_high_eff:
                 # Scenario C: Low Vol + High Eff -> SCALE IT
@@ -331,9 +343,9 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     df['calc_bid_cap'] = df['calc_net_price'] * df['base_gross_margin']
     df['calc_cost_cap'] = df['calc_bid_cap'] * 0.7
     # ROAS Targets (Function of Margin & VAT)
-    df['calc_critical_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_critical_roas(vat, x))
-    df['calc_scaling_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_scaling_roas(vat, x))
-    df['calc_break_even_roas'] = df['calc_critical_roas'] # Alias due to naming convention
+    df['critical_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_critical_roas(vat, x))
+    df['scaling_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_scaling_roas(vat, x))
+    df['calc_break_even_roas'] = df['critical_roas'] # Alias due to naming convention
     
     df['calc_roas'] = df['meta_revenue'] / df['meta_spend'].replace(0, 1)
     
@@ -352,8 +364,8 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     ), axis=1)
     
     # Efficiency metrics
-    df['calc_arpu'] = df['ga4lp_revenue'] / df.get('ga4lp_users', df['ga4lp_sessions']).replace(0, 1)
-    df['calc_arpiv'] = df.apply(lambda r: bl.calculate_arpiv(r.get('ga4item_revenue', 0), r.get('ga4item_views', 0)), axis=1)
+    df['arpu'] = df['ga4lp_revenue'] / df.get('ga4lp_users', df['ga4lp_sessions']).replace(0, 1)
+    df['arpiv'] = df.apply(lambda r: bl.calculate_arpiv(r.get('ga4item_revenue', 0), r.get('ga4item_views', 0)), axis=1)
     
     # is_product is already calculated earlier
     
@@ -376,10 +388,12 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         # Financial Metrics
         'base_gross_margin', 'calc_contribution_profit', 'calc_price_cluster',
         # ROAS Targets
-        'calc_critical_roas', 'calc_scaling_roas', 'calc_break_even_roas',
+        'critical_roas', 'scaling_roas', 'calc_break_even_roas',
+        # Efficiency Metrics
+        'calc_gpps', 'calc_cr', 'calc_frequency', 'calc_gppv', 'arpu', 'arpiv',
         # Actual Performance (FUNNEL)
         'meta_spend', 'meta_revenue', 'meta_purchases', 'calc_roas',
-        'ga4lp_sessions', 'ga4lp_revenue', 'ga4lp_purchases',
+        'ga4lp_sessions', 'ga4lp_revenue', 'ga4lp_purchases', 'ga4lp_first_time_purchasers',
         'ga4item_views', 'ga4item_revenue',
         # Technical/Debug
         'calc_net_price', 'calc_bid_cap', 'calc_cost_cap'

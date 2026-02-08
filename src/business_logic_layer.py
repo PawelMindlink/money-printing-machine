@@ -324,6 +324,16 @@ def calculate_gppv(gross_profit_item, item_views):
     return gross_profit_item / item_views
 
 
+def calculate_frequency(purchases, first_time_purchasers):
+    """
+    Calculate Frequency (Total Purchases per First-time Purchaser).
+    Formula: Total Purchases / First-time Purchasers
+    """
+    if pd.isna(first_time_purchasers) or first_time_purchasers <= 0:
+        return 0.0
+    return purchases / first_time_purchasers
+
+
 def is_product_page(url, product_id=None):
     """
     Determines if a URL is a product page (vs category, home, etc.).

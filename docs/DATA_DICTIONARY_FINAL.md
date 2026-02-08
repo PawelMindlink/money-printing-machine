@@ -41,6 +41,7 @@ This document describes the columns present in the final output file (e.g., `Iiy
 | :--- | :--- | :--- |
 | **calc_gpps** | Calculated | `GrossProfit(LP) / Sessions`. Gross Profit Per Session. |
 | **calc_cr** | Calculated | `Purchases / Sessions`. Conversion Rate. |
+| **calc_frequency** | Calculated | `Purchases / FirstTimePurchasers`. Purchase Frequency. |
 | **calc_gppv** | Calculated | `GrossProfit(Item) / ItemViews`. Gross Profit Per View. |
 | **arpu** | Calculated | `Revenue / Users`. Average Revenue Per User. |
 | **arpiv** | Calculated | `ItemRevenue / ItemViews`. Average Revenue Per Item View. |
@@ -59,5 +60,7 @@ This document describes the columns present in the final output file (e.g., `Iiy
 | :--- | :--- | :--- |
 | **ga4lp_sessions** | GA4 API/CSV | Total sessions on this landing page. |
 | **ga4lp_revenue** | GA4 API/CSV | Total revenue from this landing page. |
+| **ga4lp_purchases** | GA4 API/CSV | Number of purchases/transactions on this landing page. |
+| **ga4lp_first_time_purchasers** | GA4 API/CSV | Number of first-time purchasers. |
 | **ga4item_views** | GA4 API/CSV | Total item views (product detail page views). |
 | **ga4item_revenue** | GA4 API/CSV | Total item revenue. |
