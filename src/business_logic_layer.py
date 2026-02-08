@@ -258,6 +258,37 @@ def calculate_arpiv(item_revenue, items_viewed):
     return item_revenue / items_viewed
 
 
+
+def calculate_gross_profit(net_revenue, gross_margin):
+    """
+    Calculate Gross Profit.
+    Formula: NetRevenue * GrossMargin
+    """
+    if pd.isna(net_revenue) or pd.isna(gross_margin):
+        return 0.0
+    return net_revenue * gross_margin
+
+
+def calculate_gpps(gross_profit_lp, sessions):
+    """
+    Calculate GPPS (Gross Profit Per Session).
+    Formula: GrossProfit(LP) / Sessions
+    """
+    if pd.isna(sessions) or sessions <= 0:
+        return 0.0
+    return gross_profit_lp / sessions
+
+
+def calculate_gppv(gross_profit_item, item_views):
+    """
+    Calculate GPPV (Gross Profit Per View).
+    Formula: GrossProfit(Item) / ItemViews
+    """
+    if pd.isna(item_views) or item_views <= 0:
+        return 0.0
+    return gross_profit_item / item_views
+
+
 def is_product_page(url, product_id=None):
     """
     Determines if a URL is a product page (vs category, home, etc.).
