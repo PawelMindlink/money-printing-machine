@@ -26,6 +26,36 @@ Progi wyznaczamy dynamicznie na podstawie danych z ostatnich 90 dni (używając 
 2. **Organic LP:** `P75_VOL_GA` (Sessions), `P75_EFF_GA` (GPPS)
 3. **Item Views:** `P75_VOL_ITEM` (Views), `P75_EFF_ITEM` (GPPV)
 
+### D. Wyliczenia Finansowe (ROAS & Caps)
+
+1. **Bid Cap (Max CPA)**
+   `Bid_Cap` = `(Price / (1 + VAT))` * `Margin`
+   *(Maksymalny koszt pozyskania, przy którym wychodzimy na zero)*
+
+2. **Critical ROAS (Break Even)**
+   `Critical_ROAS` = `(1 + VAT)` / `Margin`
+   *(Minimalny ROAS, poniżej którego tracimy pieniądze na każdej sztuce)*
+
+3. **Scaling ROAS (Target)**
+   `Scaling_ROAS` = `Critical_ROAS` * 1.2
+   *(Bezpieczny cel ROAS zapewniający 20% buforu zysku)*
+
+### E. Logika Przypisywania Marży
+
+1. **Override Kategorii:** Jeśli produkt pasuje do wyjątku (np. "Akcesoria"), użyj przypisanej marży.
+2. **Produkt Standardowy:** Jeśli brak wyjątku, użyj `Default_Margin`.
+3. **Strona Nieproduktowa (np. Home):** Użyj `Min_Margin` (najniższa możliwa marża w systemie), aby zachować bezpieczeństwo wyliczeń.
+
+### F. Logika Klastrowania Cenowego
+
+Produkty są dzielone na grupy marżowe, a następnie klastrowane wg ceny:
+
+1. Sortuj produkty malejąco po cenie.
+2. Utwórz klaster z najdroższego produktu (Lider).
+3. Dodawaj kolejne produkty, dopóki: `Cena_Produktu` >= `Cena_Lidera` / 1.5.
+   *(Czyli Lider nie może być droższy niż 150% najtańszego produktu w klastrze)*.
+4. Jeśli warunek nie jest spełniony, zamknij klaster i utwórz nowy z obecnego produktu.
+
 ---
 
 ## 2. LOGIKA PRZEPŁYWU DANYCH (DATA FLOW)

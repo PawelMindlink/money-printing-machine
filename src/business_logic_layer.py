@@ -64,7 +64,7 @@ def clean_currency(val):
 # CORE BUSINESS LOGIC
 # ============================================================================
 
-def calculate_gross_margin(row, default_margin, category_overrides):
+def calculate_gross_margin(row, default_margin, category_overrides, min_margin=None, is_product=True):
     """
     Calculates gross margin based on product category/title.
     
@@ -72,23 +72,38 @@ def calculate_gross_margin(row, default_margin, category_overrides):
         row (dict/Series): Row containing 'product_type', 'category', 'title'
         default_margin (float): Default margin rate (e.g. 0.58)
         category_overrides (list): List of dicts {'category': 'str', 'rate': float}
+        min_margin (float): Lowest possible margin for safe fallback (non-product pages)
+        is_product (bool): True if entity is a product, False if category/home/other
     """
     cat_sources = [row.get('product_type'), row.get('category'), row.get('title')]
     cat_str = " ".join([str(c).lower() for c in cat_sources if pd.notna(c)])
     
+    # 1. Check Specific Overrides (Category/Title match)
     for override in category_overrides:
         if override['category'].lower() in cat_str:
             return override['rate']
-    return default_margin
+            
+    # 2. Fallback Logic
+    if is_product:
+        return default_margin
+    else:
+        # For non-product pages (e.g. Home Page), use safest (lowest) margin if specific category not matched
+        return min_margin if min_margin is not None else default_margin
 
 
-def assign_price_cluster(df, price_col='price_numeric', spread=0.5):
+def assign_price_cluster(df, price_col='price_numeric'):
     """
     Assigns price clusters to a DataFrame subset (usually passed per margin group).
     
+    Logic:
+    - Sort products by price DESC.
+    - Start Cluster 1 with highest price Product A.
+    - Add subsequent products as long as Leader Price <= 1.5 * Current Product Price.
+      (Equivalent to: Current Product Price >= Leader / 1.5)
+    - If condition fails, start new Cluster with current product as Leader.
+    
     Args:
         df (pd.DataFrame): DataFrame with 'price_numeric' column.
-        spread (float): Percentage spread for clustering (default 0.5).
         
     Returns:
         pd.Series: Series of cluster labels.
@@ -101,15 +116,18 @@ def assign_price_cluster(df, price_col='price_numeric', spread=0.5):
     sub_df = df.sort_values(price_col, ascending=False).copy()
     
     temp_clusters = []
-    curr_id = 0
+    curr_id = 1
     curr_leader = None
     
     for price in sub_df[price_col]:
         if curr_leader is None:
             curr_leader = price
-            curr_id = 1
         
-        threshold = curr_leader * (1 - spread)
+        # Condition: Leader Price must be > 1.5 * Product Price to BREAK cluster
+        # So we KEEP in cluster if Leader <= 1.5 * Product
+        # Which means: Product >= Leader / 1.5
+        threshold = curr_leader / 1.5
+        
         if price < threshold:
             curr_id += 1
             curr_leader = price
@@ -121,8 +139,14 @@ def assign_price_cluster(df, price_col='price_numeric', spread=0.5):
     # Create Labels
     id_to_label = {}
     for cid in sub_df['temp_cluster_id'].unique():
-        max_p = sub_df[sub_df['temp_cluster_id'] == cid][price_col].max()
-        id_to_label[cid] = f"TOP {int(max_p)} PLN"
+        cluster_items = sub_df[sub_df['temp_cluster_id'] == cid]
+        max_p = cluster_items[price_col].max()
+        min_p = cluster_items[price_col].min()
+        # Label: TOP X PLN (Range: Y-X)
+        if max_p == min_p:
+            id_to_label[cid] = f"TOP {int(max_p)} PLN"
+        else:
+            id_to_label[cid] = f"TOP {int(max_p)} PLN"
         
     # Map back to original index
     return sub_df['temp_cluster_id'].map(id_to_label)
@@ -222,28 +246,29 @@ def calculate_cost_cap(bid_cap, safety_factor=0.7):
     return bid_cap * safety_factor
 
 
-def calculate_critical_roas(bid_cap):
+def calculate_critical_roas(vat_rate, gross_margin):
     """
-    Calculate Critical ROAS (Minimum viable ROAS).
-    Formula: 1 / BidCap (inverted)
+    Calculate Critical ROAS (Break Even ROAS).
+    Formula: (1 + VAT) / GrossMargin.
     
-    Below this ROAS, the campaign is unprofitable.
+    Derivation:
+    Profit = (Revenue / (1+VAT)) * Margin - Cost.
+    At Break Even, Profit = 0.
+    Cost = (Revenue / (1+VAT)) * Margin.
+    ROAS = Revenue / Cost = Revenue / ((Revenue / (1+VAT)) * Margin) = (1+VAT) / Margin.
     """
-    if bid_cap <= 0:
+    if gross_margin <= 0:
         return 0.0
-    return 1 / bid_cap
+    return (1 + vat_rate) / gross_margin
 
 
 def calculate_scaling_roas(vat_rate, gross_margin):
     """
     Calculate Scaling ROAS (Target for profitable scaling).
-    Formula: 1 / (GrossMargin / (1 + VAT)) * 1.2 (for 20% buffer)
-    Simplified to match standard unit economics.
+    Formula: Critical ROAS * 1.2 (for 20% profit buffer).
     """
-    if gross_margin <= 0:
-        return 0.0
-    break_even_roas = 1 / gross_margin
-    return break_even_roas * 1.2
+    critical_roas = calculate_critical_roas(vat_rate, gross_margin)
+    return critical_roas * 1.2
 
 
 def calculate_arpiv(item_revenue, items_viewed):

@@ -26,9 +26,12 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         
     vat = config.get('vat_rate', 0.23)
     margin_cfg = config.get('margin_config', {})
-    default_margin = margin_cfg.get('default_rate', 0.1) 
+    default_margin = margin_cfg.get('default_rate', 0.5)
     category_overrides = margin_cfg.get('category_overrides', [])
     
+    # Calculate Min Margin for Fallback
+    all_rates = [default_margin] + [o['rate'] for o in category_overrides]
+    min_margin = min(all_rates) if all_rates else default_margin
     # --- DIMENSION 1: FEED (The Base) ---
     feed_path = os.path.join(input_dir, brand, f"{brand_l}_product_feed.xml")
     df = parse_product_feed_xml(feed_path)
@@ -78,9 +81,11 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
                  rev_col = next((c for c in lp_df.columns if 'revenue' in c.lower() and 'purchase' in c.lower()), None)
                  if rev_col: lp_df.rename(columns={rev_col: 'Purchase revenue'}, inplace=True)
             lp_df.rename(columns=lambda c: lp_map.get(c, c), inplace=True)
+            lp_df.rename(columns=lambda c: lp_map.get(c, c), inplace=True)
             aggs = {c: 'sum' for c in lp_map.values() if c in lp_df.columns}
             lp_agg = lp_df.groupby('path_key').agg(aggs).reset_index()
-            df = pd.merge(df, lp_agg, on='path_key', how='left')
+            # DEFECT FIX: Do NOT merge yet. Merge after Meta logic to catch synthetic pages.
+            # df = pd.merge(df, lp_agg, on='path_key', how='left')
 
     # --- DIMENSION 4: META ADS (The Check) ---
     meta_path = os.path.join(input_dir, brand, f"{brand_l}_meta_ads.csv")
@@ -96,18 +101,31 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         
         # Synthetic Products Logic (Same as before)
         if 'meta_spend' in df.columns:
+            # 1. Default to PRODUCT
+            df['calc_entity_type'] = 'PRODUCT'
+            
+            # 2. Identify items NOT in feed but with Spend as CATEGORY_OR_AD
+            # feed_id is NaN for these rows (outer join from Meta)
             mask_syn = (df['feed_id'].isna()) & (df['meta_spend'] > 0)
             if mask_syn.sum() > 0:
                 df.loc[mask_syn, 'feed_brand'] = brand
                 df.loc[mask_syn, 'calc_entity_type'] = 'CATEGORY_OR_AD'
-            
-            # Non-synthetic are products
-            df.loc[~df['feed_id'].astype(str).str.startswith('SYN-'), 'calc_entity_type'] = 'PRODUCT'
-            df['calc_entity_type'] = df['calc_entity_type'].fillna('PRODUCT') # Fallback
-        else:
-            df['calc_entity_type'] = 'PRODUCT'
+                
     else:
         df['calc_entity_type'] = 'PRODUCT'
+
+    # Set is_product flag EARLY for margin calculation
+    df['is_product'] = df['calc_entity_type'] == 'PRODUCT'
+
+    # --- LATE MERGE: GA4 LANDING PAGE ---
+    # Now that we have all rows (including Synthetic from Meta), fill path_key and merge LP data
+    if 'norm_url' in df.columns and 'path_key' in df.columns:
+         mask_missing_key = df['path_key'].isna() & df['norm_url'].notna()
+         if mask_missing_key.sum() > 0:
+             df.loc[mask_missing_key, 'path_key'] = df.loc[mask_missing_key, 'norm_url'].apply(bl.extract_path)
+    
+    if 'lp_agg' in locals() and not lp_agg.empty:
+        df = pd.merge(df, lp_agg, on='path_key', how='left')
 
     # --- 3. PRE-PROCESSING & FINANCIALS (Phase O) ---
     # Fill NA
@@ -115,12 +133,43 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         if c.startswith(('meta_', 'ga4lp_', 'ga4item_')):
             df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
 
-    # Base Fields
     df['category'] = df['feed_category']
     df['product_type'] = df.get('feed_product_type', '')
     df['price'] = df['feed_price_str']
-    df['base_gross_margin'] = df.apply(lambda row: bl.calculate_gross_margin(row, default_margin, category_overrides), axis=1)
+    
+    # Gross Margin with Fallback for Non-Products
+    df['base_gross_margin'] = df.apply(lambda row: bl.calculate_gross_margin(
+        row, default_margin, category_overrides, min_margin=min_margin, is_product=row['is_product']
+    ), axis=1)
+    
     df['feed_price_numeric'] = pd.to_numeric(df['feed_price_str'].astype(str).str.replace(' PLN', '').str.replace(',', '.').str.replace(' ', ''), errors='coerce').fillna(0)
+    
+    # AOV Logic for Non-Product / Missing Price
+    # If price is 0, try to infer from GA4 LP AOV
+    mask_no_price = (df['feed_price_numeric'] == 0)
+    if mask_no_price.sum() > 0:
+        # Calculate AOV = Revenue / Purchases
+        # Avoid division by zero
+        ga4_aov = df.loc[mask_no_price, 'ga4lp_revenue'] / df.loc[mask_no_price, 'ga4lp_purchases'].replace(0, 1)
+        # Apply only where we have purchases (AOV > 0)
+        mask_valid_aov = (df.loc[mask_no_price, 'ga4lp_purchases'] > 0)
+        
+        # Fill numeric price
+        df.loc[mask_no_price & mask_valid_aov, 'feed_price_numeric'] = ga4_aov[mask_valid_aov]
+        # Mark as inferred (optional, but good for debugging/segment)
+        df.loc[mask_no_price & mask_valid_aov, 'is_price_inferred'] = True
+    
+    df['is_price_inferred'] = df.get('is_price_inferred', False) # Ensure col exists
+    
+    # Price Cluster (per margin group)
+    df['calc_price_cluster'] = 'Other'
+    for margin in df['base_gross_margin'].unique():
+        mask = df['base_gross_margin'] == margin
+        if mask.sum() > 0:
+            subset = df.loc[mask].copy()
+            subset['price_numeric'] = subset['feed_price_numeric']
+            clusters = bl.assign_price_cluster(subset)
+            df.loc[mask, 'calc_price_cluster'] = clusters
 
     # 1. Net Revenue (All Sources)
     df['calc_net_revenue_meta'] = df['meta_revenue'] / (1 + vat)
@@ -150,7 +199,9 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     
     def get_p75(series):
         s = series[series > 0]
-        return s.quantile(0.75) if not s.empty else 0
+        if s.empty:
+            return 1.0  # Minimum threshold to prevent division by zero
+        return max(1.0, s.quantile(0.75))  # At least 1.0 to avoid edge cases
         
     P75_VOL_META = get_p75(df['meta_revenue'])
     P75_EFF_META = get_p75(df['calc_contribution_profit'])
@@ -164,7 +215,10 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     # Significance Gates
     AVG_CR = (df['ga4lp_purchases'].sum() / df['ga4lp_sessions'].sum()) if df['ga4lp_sessions'].sum() > 0 else 0.01
     MIN_META_TRANS = 10
-    MIN_ORGANIC_SESSIONS = min(2000, 100 / (AVG_CR if AVG_CR > 0 else 0.01))
+    # Significance Floor: Ensure we have enough data (50 sesji/rok to mało -> threshold usually higher)
+    # Target 300 sessions (~25/mo) as a floor for "Activity"
+    SIGNIFICANCE_FLOOR = 300
+    MIN_ORGANIC_SESSIONS = max(SIGNIFICANCE_FLOOR, min(2000, 100 / (AVG_CR if AVG_CR > 0 else 0.01)))
     
     print(f"--- MSC-ALGO PARAMETERS ---")
     print(f"P75 Meta Vol: {P75_VOL_META:.2f} | P75 Meta Eff: {P75_EFF_META:.2f}")
@@ -177,38 +231,45 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         flags = []
         
         # --- PHASE 1: META ADS FILTRATION ---
-        if row['meta_purchases'] >= MIN_META_TRANS:
-            if row['calc_contribution_profit'] > 0:
+        meta_purchases = row.get('meta_purchases', 0)
+        contribution_profit = row.get('calc_contribution_profit', 0)
+        meta_revenue = row.get('meta_revenue', 0)
+        
+        # Null-safe comparison
+        if pd.notna(meta_purchases) and meta_purchases >= MIN_META_TRANS:
+            if pd.notna(contribution_profit) and contribution_profit > 0:
                 # Profitable
-                if row['meta_revenue'] >= P75_VOL_META and row['calc_contribution_profit'] >= P75_EFF_META:
-                    return 1, "PROVEN_STAR"
+                if pd.notna(meta_revenue) and meta_revenue >= P75_VOL_META and contribution_profit >= P75_EFF_META:
+                    return 1, "PROVEN_STAR", "High ad revenue + profit"
                 else:
-                    return 2, "PROVEN_COW"
+                    return 2, "PROVEN_COW", "Profitable ads, moderate scale"
             else:
                 # Unprofitable (CM <= 0)
                 flags.append("META_LOSER")
                 # Fall through to Phase 2
         
         # --- PHASE 2: GA4 LANDING PAGE FILTRATION ---
+        ga4lp_sessions = row.get('ga4lp_sessions', 0)
+        calc_gpps = row.get('calc_gpps', 0)
         
-        if row['ga4lp_sessions'] >= MIN_ORGANIC_SESSIONS:
-            is_high_vol = row['ga4lp_sessions'] >= P75_VOL_GA
-            is_high_eff = row['calc_gpps'] >= P75_EFF_GA
+        if pd.notna(ga4lp_sessions) and ga4lp_sessions >= MIN_ORGANIC_SESSIONS:
+            is_high_vol = ga4lp_sessions >= P75_VOL_GA
+            is_high_eff = pd.notna(calc_gpps) and calc_gpps >= P75_EFF_GA
             
             if is_high_vol and is_high_eff:
                 # Scenario A: High Vol + High Eff
                 if "META_LOSER" in flags:
-                    return 3, "RECOVERY_LAUNCH"
+                    return 3, "RECOVERY_LAUNCH", "High organic demand, fix ads"
                 else:
-                    return 3, "NEW_STAR_LAUNCH"
+                    return 3, "NEW_STAR_LAUNCH", "High organic demand, untapped"
             
             elif is_high_vol and not is_high_eff:
                 # Scenario B: High Vol + Low Eff -> FIX IT
-                return 99, "FIX_LANDING_PAGE"
+                return 99, "FIX_LANDING_PAGE", "High traffic, low conversion"
                 
             elif not is_high_vol and is_high_eff:
                 # Scenario C: Low Vol + High Eff -> SCALE IT
-                return 5, "SCALE_UP"
+                return 5, "SCALE_UP", "Good CR, needs more traffic"
                 
             else:
                 # Scenario D: Low Vol + Low Eff -> DOG
@@ -219,7 +280,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         
         # Critical Check: Only analyze ITEM data for actual PRODUCTS
         if row.get('calc_entity_type') != "PRODUCT":
-            return 8, "IGNORE"
+            return 8, "IGNORE", "Non-product page"
 
         if row.get('ga4item_views', 0) >= MIN_ORGANIC_SESSIONS:
             is_high_vol = row['ga4item_views'] >= P75_VOL_ITEM
@@ -227,28 +288,53 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
             
             if is_high_vol and is_high_eff:
                 # Scenario E: Hidden Star
-                return 6, "DIRECT_TO_PDP"
+                return 6, "DIRECT_TO_PDP", "High PDP views + profit"
                 
             elif not is_high_vol and is_high_eff:
                 # Scenario F: Hidden Gem
-                return 7, "FEED_DPA"
+                return 7, "FEED_DPA", "Profitable, low PDP visibility"
                 
             elif is_high_vol and not is_high_eff:
                 # Scenario G: Window Shopping
-                return 8, "IGNORE"
+                return 8, "IGNORE", "High views, no purchases"
                 
-        return 8, "IGNORE"
+        return 8, "IGNORE", "Insufficient data"
+
 
     # Apply Logic
     msc_results = df.apply(run_msc_algo, axis=1, result_type='expand')
     df['calc_priority'] = msc_results[0]
     df['calc_segment'] = msc_results[1]
-
+    df['calc_reason'] = msc_results[2]
+    
+    # Priority Remapping & Actionable Flags
+    # Map 99 (FIX_LP) to 4 for better sorting. Rest of priorities remain.
+    df.loc[df['calc_priority'] == 99, 'calc_priority'] = 4
+    
+    # Define Actionability
+    df['calc_is_actionable'] = df['calc_priority'].isin([1, 2, 3, 4, 5, 6, 7])
+    
+    # Define Action Type
+    action_map = {
+        1: "SCALE_SPEND",
+        2: "MAINTAIN_SPEND",
+        3: "NEW_AD_CREATIVES",
+        4: "UX_PRICE_AUDIT",
+        5: "BROAD_AD_TARGETING",
+        6: "CONVERSION_CAMPAIGN",
+        7: "CATALOG_ADS_DPA",
+        8: "IGNORE"
+    }
+    df['calc_action_type'] = df['calc_priority'].map(action_map).fillna("IGNORE")
     # 6. Actionable Caps (Standard)
     df['calc_net_price'] = df['feed_price_numeric'] / (1 + vat)
     df['calc_bid_cap'] = df['calc_net_price'] * df['base_gross_margin']
     df['calc_cost_cap'] = df['calc_bid_cap'] * 0.7
-    df['calc_break_even_roas'] = 1 / df['base_gross_margin'].replace(0, float('inf'))
+    # ROAS Targets (Function of Margin & VAT)
+    df['calc_critical_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_critical_roas(vat, x))
+    df['calc_scaling_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_scaling_roas(vat, x))
+    df['calc_break_even_roas'] = df['calc_critical_roas'] # Alias due to naming convention
+    
     df['calc_roas'] = df['meta_revenue'] / df['meta_spend'].replace(0, 1)
     
     # 7. MISSING METRICS (per DATA_DICTIONARY_FINAL.md)
@@ -265,17 +351,12 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         r['ga4lp_sessions'], r['ga4lp_purchases'], r['calc_gpps'], ga4_thresholds
     ), axis=1)
     
-    # Financial metrics
-    df['critical_roas'] = df['calc_bid_cap'].apply(lambda x: bl.calculate_critical_roas(x))
-    df['scaling_roas'] = df['base_gross_margin'].apply(lambda m: bl.calculate_scaling_roas(vat, m))
-    
     # Efficiency metrics
-    df['arpu'] = df['ga4lp_revenue'] / df.get('ga4lp_users', df['ga4lp_sessions']).replace(0, 1)
-    df['arpiv'] = df.apply(lambda r: bl.calculate_arpiv(r.get('ga4item_revenue', 0), r.get('ga4item_views', 0)), axis=1)
+    df['calc_arpu'] = df['ga4lp_revenue'] / df.get('ga4lp_users', df['ga4lp_sessions']).replace(0, 1)
+    df['calc_arpiv'] = df.apply(lambda r: bl.calculate_arpiv(r.get('ga4item_revenue', 0), r.get('ga4item_views', 0)), axis=1)
     
-    # Product flag
-    df['is_product'] = df['calc_entity_type'] == 'PRODUCT'
-
+    # is_product is already calculated earlier
+    
     # --- OUTPUT ---
     out_dir = os.path.join(output_dir, brand)
     os.makedirs(out_dir, exist_ok=True)
@@ -283,23 +364,25 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     # Sort by Priority
     df.sort_values(by=['calc_priority', 'calc_contribution_profit'], ascending=[True, False], inplace=True)
     
+    # Final Export Column Update
     final_cols = [
         # Core Identifiers
-        'feed_id', 'feed_title', 'feed_brand', 'feed_category', 'feed_price_numeric', 'is_product',
-        # Classification (MSC-ALGO + Legacy)
-        'calc_priority', 'calc_segment', 'meta_class', 'ga4_class',
-        # Margin & Profit
-        'base_gross_margin', 'calc_contribution_profit',
-        # Efficiency Metrics
-        'calc_gpps', 'calc_cr', 'calc_gppv', 'arpu', 'arpiv',
-        # Financial Caps & ROAS
-        'calc_bid_cap', 'calc_cost_cap', 'critical_roas', 'scaling_roas', 'calc_break_even_roas',
-        # Meta Ads Data
+        'feed_id', 'feed_title', 'feed_brand', 'feed_category', 'feed_price_numeric', 'is_product', 'is_price_inferred',
+        # URL for ad targeting
+        'feed_link', 'norm_url',
+        # Classification (MSC-ALGO + Actionable Bits)
+        'calc_priority', 'calc_segment', 'calc_reason', 'calc_is_actionable', 'calc_action_type',
+        'meta_class', 'ga4_class',
+        # Financial Metrics
+        'base_gross_margin', 'calc_contribution_profit', 'calc_price_cluster',
+        # ROAS Targets
+        'calc_critical_roas', 'calc_scaling_roas', 'calc_break_even_roas',
+        # Actual Performance (FUNNEL)
         'meta_spend', 'meta_revenue', 'meta_purchases', 'calc_roas',
-        # GA4 Landing Page Data
-        'ga4lp_sessions', 'ga4lp_revenue',
-        # GA4 Item Data  
-        'ga4item_views', 'ga4item_revenue'
+        'ga4lp_sessions', 'ga4lp_revenue', 'ga4lp_purchases',
+        'ga4item_views', 'ga4item_revenue',
+        # Technical/Debug
+        'calc_net_price', 'calc_bid_cap', 'calc_cost_cap'
     ]
     
     final_cols = [c for c in final_cols if c in df.columns]

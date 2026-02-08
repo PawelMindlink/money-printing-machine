@@ -1,0 +1,552 @@
+{
+  "createdAt": "2026-02-08T17:23:46.609Z",
+  "updatedAt": "2026-02-08T17:23:47.018Z",
+  "id": "0N0KIAmSrRqSdFHr",
+  "name": "MSC_ALGO_v3_Pipeline",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "webhook-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "notes": "Run daily at 6 AM"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "brand",
+              "value": "={{ $json.brand || 'Iiyama' }}"
+            },
+            {
+              "name": "vat_rate",
+              "value": "0.23"
+            },
+            {
+              "name": "default_margin",
+              "value": "0.10"
+            }
+          ]
+        }
+      },
+      "id": "config-loader",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        440,
+        400
+      ],
+      "notes": "Load brand configuration from business_logic.json"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://iiyama-sklep.pl/feed_' + $json.brand.toLowerCase() + '.xml' }}",
+        "options": {}
+      },
+      "id": "fetch-feed",
+      "name": "Fetch Product Feed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        300
+      ],
+      "notes": "Download XML product feed"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse XML Feed and normalize URLs\nconst items = [];\nconst feed = $input.first().json;\n\n// Normalize URL function\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  return url.toLowerCase()\n    .replace(/^https?:\\/\\/(www\\.)?/, '')\n    .split('?')[0]\n    .replace(/\\/$/, '');\n}\n\n// Parse each product (pseudo-code, real implementation would use XML parser)\nfor (const product of feed.products || []) {\n  items.push({\n    feed_id: product.id,\n    feed_title: product.title,\n    feed_brand: product.brand,\n    feed_category: product.google_product_category,\n    feed_link: product.link,\n    norm_url: normalizeUrl(product.link),\n    path_key: '/' + normalizeUrl(product.link).split('/').slice(1).join('/'),\n    feed_price_str: product.price,\n    feed_price_numeric: parseFloat(product.price.replace(/[^0-9.]/g, ''))\n  });\n}\n\nreturn items.map(item => ({ json: item }));"
+      },
+      "id": "parse-feed",
+      "name": "Parse & Normalize Feed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        300
+      ],
+      "notes": "Extract products and normalize URLs"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "propertyId": "={{ $node['Load Config'].json.ga4_property_id }}",
+        "resource": "report",
+        "operation": "get",
+        "dimensions": [
+          "itemId"
+        ],
+        "metrics": [
+          "itemsViewed",
+          "itemRevenue",
+          "itemPurchased"
+        ]
+      },
+      "id": "fetch-ga4-items",
+      "name": "Fetch GA4 Items",
+      "type": "n8n-nodes-base.googleAnalytics",
+      "typeVersion": 2.1,
+      "position": [
+        840,
+        500
+      ],
+      "notes": "Get item-level GA4 data"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "propertyId": "={{ $node['Load Config'].json.ga4_property_id }}",
+        "resource": "report",
+        "operation": "get",
+        "dimensions": [
+          "landingPage"
+        ],
+        "metrics": [
+          "sessions",
+          "totalRevenue",
+          "transactions"
+        ]
+      },
+      "id": "fetch-ga4-lp",
+      "name": "Fetch GA4 Landing Page",
+      "type": "n8n-nodes-base.googleAnalytics",
+      "typeVersion": 2.1,
+      "position": [
+        840,
+        700
+      ],
+      "notes": "Get landing page sessions & conversions"
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v18.0/act_XXXXX/insights",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "metaBusinessApi",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "fields",
+                "value": "ad_id,spend,purchase_value,purchases,website_url"
+              },
+              {
+                "name": "level",
+                "value": "ad"
+              },
+              {
+                "name": "time_range",
+                "value": "{\"since\":\"2024-11-09\",\"until\":\"2026-02-08\"}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fetch-meta-ads",
+      "name": "Fetch Meta Ads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        900
+      ],
+      "notes": "Get Meta Ads performance data"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "feed_id",
+              "field2": "item_id"
+            }
+          ]
+        },
+        "joinMode": "keepMatches",
+        "options": {}
+      },
+      "id": "join-items",
+      "name": "Join Feed + GA4 Items",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1040,
+        400
+      ],
+      "notes": "LEFT JOIN on feed_id = item_id"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "norm_url",
+              "field2": "website_url_normalized"
+            }
+          ]
+        },
+        "joinMode": "keepEverything",
+        "options": {}
+      },
+      "id": "join-meta",
+      "name": "Join + Meta Ads (OUTER)",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1240,
+        500
+      ],
+      "notes": "OUTER JOIN to capture synthetic products"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Backfill path_key for synthetic products\nconst items = $input.all();\nreturn items.map(item => {\n  if (!item.json.path_key && item.json.norm_url) {\n    item.json.path_key = '/' + item.json.norm_url.split('/').slice(1).join('/');\n  }\n  return item;\n});"
+      },
+      "id": "backfill-keys",
+      "name": "Backfill Path Keys",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        500
+      ],
+      "notes": "Fill missing path_key from norm_url"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "path_key",
+              "field2": "landing_page"
+            }
+          ]
+        },
+        "joinMode": "enrichInput1",
+        "options": {}
+      },
+      "id": "join-lp",
+      "name": "Join + GA4 Landing Page",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1640,
+        500
+      ],
+      "notes": "LEFT JOIN to enrich with LP data"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst VAT = 0.23;\n\nfunction calculateMargin(row, defaultMargin, overrides) {\n  // Check category overrides\n  for (const override of overrides) {\n    const keywords = override.keywords || [];\n    for (const keyword of keywords) {\n      if (row.feed_title?.toLowerCase().includes(keyword.toLowerCase())) {\n        return override.rate;\n      }\n    }\n  }\n  // Fallback logic\n  const isProduct = row.calc_entity_type === 'PRODUCT';\n  if (!isProduct) {\n    // Use minimum margin for safety\n    const allRates = [defaultMargin, ...overrides.map(o => o.rate)];\n    return Math.min(...allRates);\n  }\n  return defaultMargin;\n}\n\nreturn items.map(item => {\n  const row = item.json;\n  \n  // Determine entity type\n  row.calc_entity_type = row.feed_id ? 'PRODUCT' : 'CATEGORY';\n  row.is_product = row.calc_entity_type === 'PRODUCT';\n  \n  // Calculate margin\n  const margin = calculateMargin(row, 0.10, []);\n  row.base_gross_margin = margin;\n  \n  // Financial calculations\n  row.calc_net_revenue_meta = (row.meta_revenue || 0) / (1 + VAT);\n  row.calc_gross_profit_meta = row.calc_net_revenue_meta * margin;\n  row.calc_contribution_profit = row.calc_gross_profit_meta - (row.meta_spend || 0);\n  \n  row.calc_net_revenue_lp = (row.ga4lp_revenue || 0) / (1 + VAT);\n  row.calc_gross_profit_lp = row.calc_net_revenue_lp * margin;\n  row.calc_gpps = row.ga4lp_sessions > 0 ? row.calc_gross_profit_lp / row.ga4lp_sessions : 0;\n  \n  // ROAS Calculations\n  row.calc_critical_roas = margin > 0 ? (1 + VAT) / margin : 0;\n  row.calc_scaling_roas = row.calc_critical_roas * 1.2;\n  \n  // Bid Cap\n  row.calc_net_price = (row.feed_price_numeric || 0) / (1 + VAT);\n  row.calc_bid_cap = row.calc_net_price * margin;\n  row.calc_cost_cap = row.calc_bid_cap * 0.7;\n  \n  return item;\n});"
+      },
+      "id": "calculate-metrics",
+      "name": "Calculate Financial Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        500
+      ],
+      "notes": "Compute margins, profits, ROAS targets"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Calculate P75 thresholds\nfunction getP75(values) {\n  const filtered = values.filter(v => v > 0).sort((a, b) => a - b);\n  if (filtered.length === 0) return 0;\n  const idx = Math.floor(filtered.length * 0.75);\n  return filtered[idx];\n}\n\nconst P75_VOL_META = getP75(items.map(i => i.json.meta_revenue || 0));\nconst P75_EFF_META = getP75(items.map(i => i.json.calc_contribution_profit || 0));\nconst P75_VOL_GA = getP75(items.map(i => i.json.ga4lp_sessions || 0));\nconst P75_EFF_GA = getP75(items.map(i => i.json.calc_gpps || 0));\nconst MIN_ORGANIC_SESSIONS = 300;\n\nfunction runMscAlgo(row) {\n  const flags = [];\n  \n  // Phase 1: Meta Ads\n  if ((row.meta_purchases || 0) >= 10) {\n    if (row.calc_contribution_profit > 0) {\n      if (row.meta_revenue >= P75_VOL_META && row.calc_contribution_profit >= P75_EFF_META) {\n        return [1, 'PROVEN_STAR', 'High ad revenue + profit'];\n      }\n      return [2, 'PROVEN_COW', 'Profitable ads, moderate scale'];\n    }\n    flags.push('META_LOSER');\n  }\n  \n  // Phase 2: GA4 Landing Page\n  if ((row.ga4lp_sessions || 0) >= MIN_ORGANIC_SESSIONS) {\n    const isHighVol = row.ga4lp_sessions >= P75_VOL_GA;\n    const isHighEff = row.calc_gpps >= P75_EFF_GA;\n    \n    if (isHighVol && isHighEff) {\n      if (flags.includes('META_LOSER')) {\n        return [3, 'RECOVERY_LAUNCH', 'High organic demand, fix ads'];\n      }\n      return [3, 'NEW_STAR_LAUNCH', 'High organic demand, untapped'];\n    }\n    \n    if (isHighVol && !isHighEff) {\n      return [4, 'FIX_LANDING_PAGE', 'High traffic, low conversion'];\n    }\n    \n    if (!isHighVol && isHighEff) {\n      return [5, 'SCALE_UP', 'Good CR, needs more traffic'];\n    }\n  }\n  \n  // Phase 3: GA4 Items\n  if (row.calc_entity_type !== 'PRODUCT') {\n    return [8, 'IGNORE', 'Non-product page'];\n  }\n  \n  return [8, 'IGNORE', 'Insufficient data'];\n}\n\nreturn items.map(item => {\n  const [priority, segment, reason] = runMscAlgo(item.json);\n  item.json.calc_priority = priority;\n  item.json.calc_segment = segment;\n  item.json.calc_reason = reason;\n  item.json.calc_is_actionable = priority <= 7;\n  return item;\n});"
+      },
+      "id": "msc-algo",
+      "name": "MSC-ALGO Decision Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        500
+      ],
+      "notes": "Phase 1-3 waterfall classification"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.calc_is_actionable }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "filter-actionable",
+      "name": "Filter Actionable Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        500
+      ],
+      "notes": "Keep only Priority 1-7"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "fileContent": "={{ JSON.stringify($input.all().map(i => i.json), null, 2) }}",
+        "fileName": "={{ $node['Load Config'].json.brand }}_Growth_Opportunities.csv",
+        "options": {}
+      },
+      "id": "export-csv",
+      "name": "Export to CSV",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2440,
+        500
+      ],
+      "notes": "Save final results"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Product Feed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch GA4 Items",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch GA4 Landing Page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Meta Ads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Product Feed": {
+      "main": [
+        [
+          {
+            "node": "Parse & Normalize Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Normalize Feed": {
+      "main": [
+        [
+          {
+            "node": "Join Feed + GA4 Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GA4 Items": {
+      "main": [
+        [
+          {
+            "node": "Join Feed + GA4 Items",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Join Feed + GA4 Items": {
+      "main": [
+        [
+          {
+            "node": "Join + Meta Ads (OUTER)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Meta Ads": {
+      "main": [
+        [
+          {
+            "node": "Join + Meta Ads (OUTER)",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Join + Meta Ads (OUTER)": {
+      "main": [
+        [
+          {
+            "node": "Backfill Path Keys",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backfill Path Keys": {
+      "main": [
+        [
+          {
+            "node": "Join + GA4 Landing Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GA4 Landing Page": {
+      "main": [
+        [
+          {
+            "node": "Join + GA4 Landing Page",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Join + GA4 Landing Page": {
+      "main": [
+        [
+          {
+            "node": "Calculate Financial Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Financial Metrics": {
+      "main": [
+        [
+          {
+            "node": "MSC-ALGO Decision Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MSC-ALGO Decision Logic": {
+      "main": [
+        [
+          {
+            "node": "Filter Actionable Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Actionable Only": {
+      "main": [
+        [
+          {
+            "node": "Export to CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "2949c585-c31d-4b94-a890-de506317dcc6",
+  "triggerCount": 0,
+  "shared": [
+    {
+      "createdAt": "2026-02-08T17:23:46.616Z",
+      "updatedAt": "2026-02-08T17:23:46.616Z",
+      "role": "workflow:owner",
+      "workflowId": "0N0KIAmSrRqSdFHr",
+      "projectId": "HdWBpWyygCpr2hPz",
+      "project": {
+        "createdAt": "2025-06-04T17:12:06.615Z",
+        "updatedAt": "2025-06-04T17:19:23.175Z",
+        "id": "HdWBpWyygCpr2hPz",
+        "name": "Christopher Gibb <chris@ironcode.io>",
+        "type": "personal",
+        "icon": null,
+        "projectRelations": [
+          {
+            "createdAt": "2025-06-04T17:12:06.615Z",
+            "updatedAt": "2025-06-04T17:12:06.615Z",
+            "role": "project:personalOwner",
+            "userId": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
+            "projectId": "HdWBpWyygCpr2hPz",
+            "user": {
+              "createdAt": "2025-06-04T17:12:05.084Z",
+              "updatedAt": "2026-01-19T09:51:41.708Z",
+              "id": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
+              "email": "chris@ironcode.io",
+              "firstName": "Christopher",
+              "lastName": "Gibb",
+              "personalizationAnswers": {
+                "companyType": "personal",
+                "reportedSource": "friend",
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-06-04T17:19:38.362Z",
+                "personalization_survey_n8n_version": "1.54.4"
+              },
+              "settings": {
+                "userActivated": true,
+                "firstSuccessfulWorkflowId": "o32leWbxq0RNU38m",
+                "userActivatedAt": 1749182444106,
+                "easyAIWorkflowOnboarded": true,
+                "npsSurvey": {
+                  "waitingForResponse": true,
+                  "ignoredCount": 2,
+                  "lastShownAt": 1768816299172
+                }
+              },
+              "role": "global:owner",
+              "disabled": false,
+              "mfaEnabled": false,
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": []
+}
