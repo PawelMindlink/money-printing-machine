@@ -117,6 +117,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
 
     # Base Fields
     df['category'] = df['feed_category']
+    df['product_type'] = df.get('feed_product_type', '')
     df['price'] = df['feed_price_str']
     df['base_gross_margin'] = df.apply(lambda row: bl.calculate_gross_margin(row, default_margin, category_overrides), axis=1)
     df['feed_price_numeric'] = pd.to_numeric(df['feed_price_str'].astype(str).str.replace(' PLN', '').str.replace(',', '.').str.replace(' ', ''), errors='coerce').fillna(0)

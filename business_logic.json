@@ -36,7 +36,11 @@
                         "rate": 0.23
                     },
                     {
-                        "category": "worki treningowe",
+                        "category": "worki",
+                        "rate": 0.23
+                    },
+                    {
+                        "category": "punching bag",
                         "rate": 0.23
                     }
                 ]
@@ -54,7 +58,23 @@
                         "rate": 0.10
                     },
                     {
+                        "category": "desktop",
+                        "rate": 0.10
+                    },
+                    {
                         "category": "dla graczy",
+                        "rate": 0.10
+                    },
+                    {
+                        "category": "gaming",
+                        "rate": 0.10
+                    },
+                    {
+                        "category": "g-master",
+                        "rate": 0.10
+                    },
+                    {
+                        "category": "signage",
                         "rate": 0.10
                     },
                     {
@@ -62,7 +82,27 @@
                         "rate": 0.10
                     },
                     {
+                        "category": "interaktywne",
+                        "rate": 0.15
+                    },
+                    {
+                        "category": "interactive",
+                        "rate": 0.15
+                    },
+                    {
                         "category": "dotykowe",
+                        "rate": 0.15
+                    },
+                    {
+                        "category": "touch",
+                        "rate": 0.15
+                    },
+                    {
+                        "category": "open frame",
+                        "rate": 0.15
+                    },
+                    {
+                        "category": "unified communication",
                         "rate": 0.15
                     },
                     {
@@ -70,7 +110,15 @@
                         "rate": 0.15
                     },
                     {
+                        "category": "accessories",
+                        "rate": 0.15
+                    },
+                    {
                         "category": "uchwyty",
+                        "rate": 0.15
+                    },
+                    {
+                        "category": "mounts",
                         "rate": 0.15
                     },
                     {
@@ -78,11 +126,15 @@
                         "rate": 0.15
                     },
                     {
+                        "category": "arms",
+                        "rate": 0.15
+                    },
+                    {
                         "category": "linki",
                         "rate": 0.15
                     },
                     {
-                        "category": "interaktywne",
+                        "category": "cables",
                         "rate": 0.15
                     }
                 ]
@@ -98,5 +150,5 @@
             }
         }
     ],
-    "note": "Bushido: 23% for training bags, 58% for all other products. Iiyama: 10% for monitors/signage, 15% for touchscreens/accessories. Koszulkowy: flat 45%."
+    "note": "Bushido: 23% for punching bags, 58% others. Iiyama: 10% Monitors/Signage, 15% Touch/Interactive/Accessories. Koszulkowy: Flat 45%."
 }

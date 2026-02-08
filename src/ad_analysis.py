@@ -98,6 +98,7 @@ def run_ad_analysis(brand, input_dir, output_dir):
     # A. Margin
     # Prepare row for calculate_gross_margin (expects 'category', 'price')
     df['category'] = df.get('feed_category', 'Unknown')
+    df['product_type'] = df.get('feed_product_type', '')
     df['price'] = df.get('feed_price_str', '0')
     
     df['base_gross_margin'] = df.apply(lambda row: bl.calculate_gross_margin(row, default_margin, category_overrides), axis=1)
@@ -128,7 +129,7 @@ def run_ad_analysis(brand, input_dir, output_dir):
     
     # ROAS Metrics
     df['calc_break_even_roas'] = 1 / df['base_gross_margin']
-    df['calc_scaling_roas'] = bl.calculate_scaling_roas(vat_rate, df['base_gross_margin'])
+    df['calc_scaling_roas'] = df['base_gross_margin'].apply(lambda m: bl.calculate_scaling_roas(vat_rate, m))
     
     # E. Action Logic
     def decide_action(row):
@@ -189,4 +190,11 @@ def run_ad_analysis(brand, input_dir, output_dir):
     print(f"Saved Process 1 to: {out_path}")
 
 if __name__ == "__main__":
-    run_ad_analysis("Iiyama", "Input", "Output")
+    import sys
+    if len(sys.argv) > 1:
+        brand_arg = sys.argv[1]
+        run_ad_analysis(brand_arg, "Input", "Output")
+    else:
+        print("Usage: python ad_analysis.py <Brand>")
+        # Default for debugging
+        # run_ad_analysis("Iiyama", "Input", "Output")
