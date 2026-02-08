@@ -10,7 +10,7 @@
 
 ### B. Definicje Metryk (Calculated Fields)
 
-Dla każdego wiersza danych obliczamy:
+Dla każdego wiersza danych obliczamy (Zabezpieczenie: `NaN` traktowane jako 0):
 
 1. `Net_Revenue` = `Revenue` / `(1 + VAT_RATE)`
 2. `Gross_Profit` = `Net_Revenue` * `MARGIN_RATE`
@@ -25,6 +25,7 @@ Progi wyznaczamy dynamicznie na podstawie danych z ostatnich 90 dni (używając 
 1. **Meta Ads:** `P75_VOL_META` (Revenue), `P75_EFF_META` (CM)
 2. **Organic LP:** `P75_VOL_GA` (Sessions), `P75_EFF_GA` (GPPS)
 3. **Item Views:** `P75_VOL_ITEM` (Views), `P75_EFF_ITEM` (GPPV)
+   *(Uwaga: Jeśli P75 = 0, ustawiamy minimalny próg 1.0, aby uniknąć błędów logicznych)*
 
 ### D. Wyliczenia Finansowe (ROAS & Caps)
 
@@ -129,8 +130,8 @@ Zmienna stanu: `FLAGS = []`.
 | **1** | **PROVEN STAR** | Skaluj budżet. |
 | **2** | **PROVEN COW** | Utrzymaj. |
 | **3** | **LAUNCH / RECOVERY** | Nowe kreacje (Wideo/Statyk). |
+| **4** | **FIX LANDING PAGE** | Audyt UX/Ceny. Wstrzymaj reklamy. (Dawniej Priorytet 99) |
 | **5** | **SCALE UP** | Kampania Broad / Advantage+. |
 | **6** | **DIRECT-TO-PDP** | Kampania na konwersję (PDP). |
 | **7** | **FEED / DPA** | Advantage+ Catalog Ads. |
-| **99** | **FIX LANDING PAGE** | Audyt UX/Ceny. Wstrzymaj reklamy. |
 | **8** | **IGNORE** | Brak działań. |
