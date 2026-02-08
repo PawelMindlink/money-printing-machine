@@ -1,441 +1,260 @@
-
 import pandas as pd
 import os
-import re
-import xml.etree.ElementTree as ET
-from io import StringIO
 import sys
 import json
-from pathlib import Path
-from ga4_api_client import fetch_ga4_data, fetch_ga4_items
 import business_logic_layer as bl
+from ga4_api_client import fetch_ga4_data, fetch_ga4_items
+from data_loader import load_ga4_csv, parse_product_feed_xml
 
 # HARDCODED PATH TO CREDENTIALS (for n8n/local execution) - Overridable via Env Var
 GA4_CREDS_PATH = os.environ.get("GA4_CREDS_PATH", r"c:\Users\Paweł\Documents\GitHub\ICP Research\Core\Configs\ga4_credentials.json")
 
 # ============================================================================
-# UTILS
-# ============================================================================
-
-def load_ga4_csv(filepath):
-    """Load GA4 CSV by dynamically finding the header row"""
-    if not os.path.exists(filepath):
-        print(f"File not found: {filepath}")
-        return pd.DataFrame()
-        
-    with open(filepath, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-        
-    header_idx = -1
-    keywords = ['Item name', 'Item ID', 'Landing page', 'landingPage', 'Page path']
-    
-    for i, line in enumerate(lines):
-        if any(kw in line for kw in keywords):
-            header_idx = i
-            break
-            
-    if header_idx == -1:
-        for i, line in enumerate(lines):
-            if not line.strip().startswith('#') and line.strip() != '':
-                header_idx = i
-                break
-                
-    if header_idx == -1:
-        return pd.DataFrame()
-
-    header_line = lines[header_idx]
-    data_lines = lines[header_idx+1:]
-    
-    filtered_data = []
-    for line in data_lines:
-        clean_line = line.strip()
-        if clean_line and not any(total_marker in clean_line.lower() for total_marker in ['grand total', 'total']):
-            filtered_data.append(line)
-            
-    csv_str = header_line + ''.join(filtered_data)
-    df = pd.read_csv(StringIO(csv_str))
-    
-    if not df.empty:
-        first_col = df.columns[0]
-        df = df[df[first_col].notna()].copy()
-        
-    return df
-
-def parse_product_feed_xml(filepath):
-    """Parse Facebook/Google Product Feed XML - EXTENDED with all useful fields"""
-    if not os.path.exists(filepath):
-        print(f"Feed not found: {filepath}")
-        return pd.DataFrame()
-        
-    tree = ET.parse(filepath)
-    root = tree.getroot()
-    ns = {'g': 'http://base.google.com/ns/1.0'}
-    
-    products = []
-    for item in root.findall('.//item'):
-        # Extract Category properly (Iiyama case: '305')
-        cat_raw = item.findtext('g:google_product_category', namespaces=ns)
-        # Mapping for known obscur codes
-        if cat_raw == '305': 
-            cat_clean = 'Monitors'
-        else:
-            cat_clean = cat_raw
-
-        p = {
-            # Core identifiers
-            'id': item.findtext('g:id', namespaces=ns),
-            'title': item.findtext('g:title', namespaces=ns) or item.findtext('title'),
-            'link': item.findtext('g:link', namespaces=ns) or item.findtext('link'),
-            
-            # Categories
-            'category': cat_clean,
-            'product_type': item.findtext('g:product_type', namespaces=ns),
-            
-            # Pricing
-            'price': item.findtext('g:price', namespaces=ns),
-            
-            # Media & Creative (for copywriter/creative team)
-            'image_link': item.findtext('g:image_link', namespaces=ns),
-            'description': item.findtext('description') or item.findtext('g:description', namespaces=ns),
-            
-            # Brand & Identification
-            'brand': item.findtext('g:brand', namespaces=ns),
-            'gtin': item.findtext('g:gtin', namespaces=ns),
-            'mpn': item.findtext('g:mpn', namespaces=ns),
-            
-            # Availability
-            'availability': item.findtext('g:availability', namespaces=ns),
-        }
-        p['norm_url'] = bl.normalize_url(p['link'])
-        p['path_key'] = bl.extract_path(p['link'])
-        products.append(p)
-        
-    return pd.DataFrame(products)
-
-
-# ============================================================================
-# PIPELINE - FEED-FIRST APPROACH (Enriched with Category Ads)
+# PROCESS 2: GROWTH OPPORTUNITIES (MECE Logic)
 # ============================================================================
 
 def run_pipeline(brand, input_dir, output_dir, full_config):
-    print(f"\n>>> Running Optimized Pipeline for: {brand}")
+    print(f"\n>>> Running Process 2 (Growth Opportunities) for: {brand}")
     brand_l = brand.lower()
     
     # 1. Get Brand Setup
     clients_list = full_config.get('clients', [])
     config = next((c for c in clients_list if c['name'].lower() == brand.lower()), {})
     if not config:
-        print(f"Error: Brand configuration for {brand} not found in business_logic.json!")
+        print(f"Error: Brand configuration for {brand} not found!")
         return None
     
-    # 2. Load Feed
+    # --- DIMENSION 1: FEED (The Base) ---
     feed_path = os.path.join(input_dir, brand, f"{brand_l}_product_feed.xml")
     df = parse_product_feed_xml(feed_path)
-    # If feed is empty, we must create an empty DF with correct columns for Outer Join to work
+    
     if df.empty:
-        print(f"Warning: Feed empty or missing at {feed_path}. Proceeding with Ad Data only.")
-        df = pd.DataFrame(columns=['id', 'title', 'link', 'norm_url', 'path_key', 'price', 'brand', 'category'])
+        print(f"Warning: Feed missing. Using empty base.")
+        df = pd.DataFrame(columns=['feed_id', 'feed_title', 'feed_link', 'norm_url', 'path_key', 'feed_price_str', 'feed_brand', 'feed_category'])
     else:
         print(f"Loaded {len(df)} products from Feed")
 
-    # 3. Enrich with Items (Metric Depth - Hybrid API/CSV)
+    # --- DIMENSION 2: GA4 ITEM (Desire) ---
     items_df = pd.DataFrame()
-    items_source = "CSV"
-    
-    # Try API if Property ID exists
     prop_id = config.get('ga4_property_id')
+    
+    # API Try
     if prop_id and os.path.exists(GA4_CREDS_PATH):
         try:
-            items_df = fetch_ga4_items(GA4_CREDS_PATH, prop_id, limit=50000)
-            if not items_df.empty:
-                items_source = "API"
+           items_df = fetch_ga4_items(GA4_CREDS_PATH, prop_id, limit=50000)
         except Exception as e:
-            print(f"Items API failed: {e}. Falling back to CSV.")
-            
-    # Fallback to CSV
+            print(f"Items API failed: {e}")
+
+    # CSV Fallback
     if items_df.empty:
         items_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_items_freeform.csv")
-        if not os.path.exists(items_path):
-            items_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_items.csv")
+        if not os.path.exists(items_path): items_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_items.csv")
+        if os.path.exists(items_path): items_df = load_ga4_csv(items_path)
             
-        if os.path.exists(items_path):
-            items_df = load_ga4_csv(items_path)
-            
-    # Process Items if loaded
     if not items_df.empty:
-        items_df['Item ID'] = items_df['Item ID'].astype(str)
-        def get_clean_id(id_val):
-            return str(id_val).split('-')[0].split('.')[0]
-        items_df['Clean ID'] = items_df['Item ID'].apply(get_clean_id)
+        # Standardize Columns to 'ga4item_'
+        item_map = {
+             'Items viewed': 'ga4item_views',
+             'Items purchased': 'ga4item_purchases',
+             'Item revenue': 'ga4item_revenue',
+             'Item ID': 'raw_item_id'
+        }
+        items_df.rename(columns=lambda c: item_map.get(c, c), inplace=True)
         
-        # Ensure 'id' column exists in df even if empty
-        if 'id' not in df.columns: df['id'] = pd.NA
-        df['id'] = df['id'].astype(str)
+        # Clean ID for join
+        items_df['Clean ID'] = items_df['raw_item_id'].astype(str).apply(lambda x: str(x).split('-')[0].split('.')[0])
         
-        items_agg = items_df.groupby('Clean ID').agg({
-            'Items viewed': 'sum',
-            'Items purchased': 'sum',
-            'Item revenue': 'sum'
-        }).reset_index()
+        # Aggregate duplicates
+        curr_cols = [c for c in items_df.columns if c.startswith('ga4item_')]
+        items_agg = items_df.groupby('Clean ID')[curr_cols].sum().reset_index()
         
-        df = pd.merge(df, items_agg, left_on='id', right_on='Clean ID', how='left')
-        print(f"Enriched with GA4 Items ({items_source}, Match: {df['Clean ID'].notna().sum()})")
-
-
-    # 4. Enrich with Landing Pages (Session Depth - Hybrid API/CSV)
-    lp_df = pd.DataFrame()
-    ga4_source = "CSV"
+        # Join to Feed
+        df['feed_id'] = df['feed_id'].astype(str)
+        df = pd.merge(df, items_agg, left_on='feed_id', right_on='Clean ID', how='left')
+        print(f"Enriched with GA4 Items (Matches: {df['Clean ID'].notna().sum()})")
     
-    # Try API if Property ID exists
-    prop_id = config.get('ga4_property_id')
+    # --- DIMENSION 3: GA4 LANDING PAGE (Traffic/Conversion) ---
+    lp_df = pd.DataFrame()
+    
+    # API Try
     if prop_id and os.path.exists(GA4_CREDS_PATH):
         try:
-            print(f"Fetching GA4 Data via API (Property: {prop_id})...")
-            # Limit 100k rows to cover Koszulkowy case
             lp_df = fetch_ga4_data(GA4_CREDS_PATH, prop_id, limit=100000)
-            if not lp_df.empty:
-                ga4_source = "API"
-        except Exception as e:
-            print(f"API Fetch Failed: {e}. Falling back to CSV.")
-            
-    # Fallback to CSV if API failed or not configured
+        except Exception:
+            pass
+
+    # CSV Fallback
     if lp_df.empty:
-        lp_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_lp_freeform.csv")
-        if not os.path.exists(lp_path):
-            lp_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_lp.csv")
-            
-        if os.path.exists(lp_path):
-            print(f"Loading GA4 LP from CSV: {lp_path}")
-            lp_df = load_ga4_csv(lp_path)
-            
-    # Process if data loaded
+        lp_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_lp_freeform.csv") 
+        if not os.path.exists(lp_path): lp_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_lp.csv")
+        if os.path.exists(lp_path): lp_df = load_ga4_csv(lp_path)
+
     if not lp_df.empty:
+        # Find Link Column
         lp_col = next((c for c in ['Landing page', 'Landing page + query string', 'landingPage'] if c in lp_df.columns), None)
-        
         if lp_col:
             lp_df['path_key'] = lp_df[lp_col].apply(bl.extract_path)
-            # Ensure numeric columns for aggregation
-            # 'Purchase revenue' comes from API (renamed from Item revenue in client) or CSV
-            cols_to_sum = ['Sessions', 'Purchases', 'First time purchasers', 'Purchase revenue']
             
-            # Normalization for CSV/API differences
+            # Map Columns
+            lp_map = {
+                'Sessions': 'ga4lp_sessions',
+                'Users': 'ga4lp_users',
+                'Purchases': 'ga4lp_purchases',
+                'Purchase revenue': 'ga4lp_revenue'
+            }
+            # Handle potential revenue name mismatch
             if 'Purchase revenue' not in lp_df.columns:
-                # Try finding similar columns
-                rev_col = next((c for c in lp_df.columns if 'revenue' in c.lower() and 'purchase' in c.lower()), None)
-                if rev_col:
-                    lp_df.rename(columns={rev_col: 'Purchase revenue'}, inplace=True)
-                else:
-                    lp_df['Purchase revenue'] = 0
+                 rev_col = next((c for c in lp_df.columns if 'revenue' in c.lower() and 'purchase' in c.lower()), None)
+                 if rev_col: lp_df.rename(columns={rev_col: 'Purchase revenue'}, inplace=True)
+
+            lp_df.rename(columns=lambda c: lp_map.get(c, c), inplace=True)
             
-            for c in cols_to_sum:
-                if c not in lp_df.columns:
-                    lp_df[c] = 0
-                else:
-                    lp_df[c] = pd.to_numeric(lp_df[c], errors='coerce').fillna(0)
-                    
-            lp_agg = lp_df.groupby('path_key')[cols_to_sum].sum().reset_index()
+            # Aggregate
+            aggs = {c: 'sum' for c in lp_map.values() if c in lp_df.columns}
+            lp_agg = lp_df.groupby('path_key').agg(aggs).reset_index()
             
             df = pd.merge(df, lp_agg, on='path_key', how='left')
-            print(f"Enriched with GA4 Sessions ({ga4_source}, Match: {df['Sessions'].notna().sum()})")
-    else:
-        print("Warning: No GA4 Data loaded (API or CSV).")
+            print(f"Enriched with GA4 LP Data")
 
-    # 5. Join Meta Ads (OUTER JOIN to Capture Category Ads)
+    # --- DIMENSION 4: META ADS (The Check) ---
     meta_path = os.path.join(input_dir, brand, f"{brand_l}_meta_ads.csv")
     if os.path.exists(meta_path):
         meta_df = pd.read_csv(meta_path)
         meta_df['norm_url'] = meta_df['Link (ad settings)'].apply(bl.normalize_url)
         
-        # Safe aggregation of potential missing columns
-        agg_dict = {
-            'Amount spent (PLN)': 'sum',
-            'Purchases': 'sum',
-            'Purchases conversion value': 'sum'
-        }
-        
-        # Only aggregate existing cols
-        agg_dict = {k:v for k,v in agg_dict.items() if k in meta_df.columns}
-
-        meta_agg = meta_df.groupby('norm_url').agg(agg_dict).reset_index()
-        # Rename strictly
-        rename_map = {
+        # Strict Mapping
+        meta_map = {
             'Amount spent (PLN)': 'meta_spend',
             'Purchases': 'meta_purchases',
             'Purchases conversion value': 'meta_revenue'
         }
-        meta_agg.rename(columns=rename_map, inplace=True)
+        # Fallback for col names
+        if 'Amount spent (PLN)' not in meta_df.columns and 'Amount spent' in meta_df.columns:
+             meta_map['Amount spent'] = 'meta_spend'
         
-        # Use OUTER JOIN to include Ads that don't match Feed (Category/General)
+        meta_df.rename(columns=lambda c: meta_map.get(c, c), inplace=True)
+        
+        aggs = {c: 'sum' for c in meta_map.values() if c in meta_df.columns}
+        meta_agg = meta_df.groupby('norm_url').agg(aggs).reset_index()
+        
         df = pd.merge(df, meta_agg, on='norm_url', how='outer')
-        print(f"Enriched with Meta Ads (Outer Join - Total Rows: {len(df)})")
+        print(f"Enriched with Meta Ads (Total Rows: {len(df)})")
         
-        # --- SYNTHETIC PRODCUT CREATION FOR UNMATCHED ADS ---
-        # Rows with meta_spend > 0 but no 'id' (Product ID)
+        # Synthetic Products for Unmatched Ads
         if 'meta_spend' in df.columns:
-            mask_synthetic = (df['id'].isna()) & (df['meta_spend'] > 0)
-            
-            if mask_synthetic.sum() > 0:
-                print(f"Creating {mask_synthetic.sum()} Synthetic Products for Unmatched Ads (Category Pages)")
-                
-                # Derive Title from URL
+            mask_syn = (df['feed_id'].isna()) & (df['meta_spend'] > 0)
+            if mask_syn.sum() > 0:
+                print(f"Creating {mask_syn.sum()} Synthetic Products for Unmatched Ads")
                 def derive_title(url):
                     if pd.isna(url): return "Unknown Ad"
-                    path = url.split('/')[-1]
-                    path = path.replace('-', ' ').replace('.html', '').replace('_', ' ')
-                    return f"Ad: {path.title()[:50]}"
+                    return f"Ad: {url.split('/')[-1][:50]}"
                 
-                df.loc[mask_synthetic, 'title'] = df.loc[mask_synthetic, 'norm_url'].apply(derive_title)
-                df.loc[mask_synthetic, 'category'] = 'General / Category'
-                df.loc[mask_synthetic, 'id'] = df.loc[mask_synthetic, 'norm_url'].apply(lambda x: f"SYN-{hash(x) % 10000}")
-                df.loc[mask_synthetic, 'price'] = '0 PLN' # Set safe defaults
-                df.loc[mask_synthetic, 'brand'] = brand
-            
-    # 6. CALCULATIONS & CLASSIFICATION
-    if 'meta_spend' not in df.columns: df['meta_spend'] = 0
-    if 'meta_revenue' not in df.columns: df['meta_revenue'] = 0
-    
+                df.loc[mask_syn, 'feed_title'] = df.loc[mask_syn, 'norm_url'].apply(derive_title)
+                df.loc[mask_syn, 'feed_category'] = 'General / Category'
+                df.loc[mask_syn, 'feed_id'] = df.loc[mask_syn, 'norm_url'].apply(lambda x: f"SYN-{hash(x) % 10000}")
+                df.loc[mask_syn, 'feed_price_str'] = '0 PLN'
+                df.loc[mask_syn, 'feed_brand'] = brand
+
+    # --- CALCULATIONS ---
+    # fill na
+    for c in df.columns:
+        if c.startswith(('meta_', 'ga4lp_', 'ga4item_')):
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+
+    # Base Logic
     vat = config.get('vat_rate', 0.23)
     margin_cfg = config.get('margin_config', {})
     default_margin = margin_cfg.get('default_rate', 0.1) 
     category_overrides = margin_cfg.get('category_overrides', [])
     
-    # Calculate Frequency 
-    if 'Purchases' not in df.columns: df['Purchases'] = 0
-    if 'First time purchasers' not in df.columns: df['First time purchasers'] = 0
+    # 1. Gross Margin & Price
+    df['category'] = df['feed_category']
+    df['price'] = df['feed_price_str']
     
-    df['calc_frequency'] = df['Purchases'].fillna(0) / df['First time purchasers'].replace(0, 1)
+    df['base_gross_margin'] = df.apply(lambda row: bl.calculate_gross_margin(row, default_margin, category_overrides), axis=1)
     
-    # Apply Margin Mapping
-    df['gross_margin'] = df.apply(lambda row: bl.calculate_gross_margin(row, default_margin, category_overrides), axis=1)
+    # 2. Financials
+    df['feed_price_numeric'] = pd.to_numeric(df['feed_price_str'].astype(str).str.replace(' PLN', '').str.replace(',', '.').str.replace(' ', ''), errors='coerce').fillna(0)
     
-    # PRICE CLUSTERING
-    df['price_numeric'] = pd.to_numeric(df['price'].astype(str).str.replace(' PLN', '').str.replace(',', '.').str.replace(' ', ''), errors='coerce').fillna(0)
-    
-    # Apply per Margin Group
-    df['price_cluster'] = "Other"
-    for margin in df['gross_margin'].unique():
-        mask = df['gross_margin'] == margin
-        if mask.sum() > 0:
-            clusters = bl.assign_price_cluster(df.loc[mask])
-            df.loc[mask, 'price_cluster'] = clusters
-
-    # CP Calculation
-    df['contribution_profit'] = bl.calculate_contribution_profit(
-        df['meta_revenue'].fillna(0),
-        vat,
-        df['gross_margin'],
-        df['calc_frequency'],
-        df['meta_spend'].fillna(0)
+    # CP (Page Level)
+    df['calc_contribution_profit'] = (
+        df.get('ga4lp_revenue', 0) 
+        - df.get('meta_spend', 0) 
+        - (df.get('ga4lp_purchases', 0) * (df['feed_price_numeric']/(1+vat) * (1-df['base_gross_margin'])))
     )
-    
-    # Meta Ads Classification
-    df['meta_class'] = df.apply(lambda row: bl.classify_meta_ads(row['contribution_profit'], row['meta_spend']), axis=1)
-    
-    # ARPU
-    rev_source = 'Purchase revenue' if 'Purchase revenue' in df.columns else 'Item revenue'
-    user_col = 'Users' if 'Users' in df.columns else 'Sessions'
-    if rev_source not in df.columns: df[rev_source] = 0
-    if user_col not in df.columns: df[user_col] = 1
-    
-    df['arpu'] = df[rev_source].fillna(0) / df[user_col].replace(0, pd.NA)
-    df['arpu'] = df['arpu'].fillna(0)
-    
-    # GA4 Classification
-    sess_col = 'Sessions'
-    if sess_col not in df.columns: df[sess_col] = 0
-    
-    # Calculate thresholds
-    # We need to replicate non_zero_quantile logic or exposing it in BL
-    # For now, let's keep it here but using quantile
-    def non_zero_quantile(series, q=0.75):
-        valid = series[series > 0]
-        if valid.empty: return 0
-        return valid.quantile(q)
-        
-    trans_col = 'Purchases'
-    arpu_col = 'arpu'
-    
-    trans_75 = non_zero_quantile(df[trans_col], 0.75)
-    arpu_75 = non_zero_quantile(df[arpu_col], 0.75)
-    
-    thresholds = {
-        'min_activity': df[sess_col].quantile(0.25) if not df.empty else 0,
-        'trans_75': trans_75,
-        'arpu_75': arpu_75
-    }
-    
-    print(f"Classification Thresholds (Active Products P75): Trans≥{trans_75:.0f}, ARPU≥{arpu_75:.2f}")
-    
-    df['ga4_class'] = df.apply(lambda row: bl.classify_ga4_product(
-        row.get(sess_col, 0),
-        row.get(trans_col, 0),
-        row.get(arpu_col, 0),
-        thresholds
-    ), axis=1)
 
-    # Priority Assignment
-    df['priority'] = df.apply(lambda row: bl.determine_priority(row['ga4_class'], row['meta_class']), axis=1)
+    # 3. Classifications (MECE Logic)
     
-    # =================
-    # NEW METRICS (v2.0)
-    # =================
+    # Metrics for Classification
+    df['calc_arpu'] = df.get('ga4lp_revenue', 0) / df.get('ga4lp_users', 1).replace(0, 1)
     
-    # IsProduct Flag
-    df['is_product'] = df.apply(lambda row: bl.is_product_page(row.get('link', ''), row.get('id', None)), axis=1)
-    
-    # Bid Cap & Cost Cap
-    df['bid_cap'] = df.apply(lambda row: bl.calculate_bid_cap(row['price_numeric'], vat, row['gross_margin']), axis=1)
-    df['cost_cap'] = df['bid_cap'].apply(lambda bc: bl.calculate_cost_cap(bc))
-    
-    # ROAS Metrics
-    df['critical_roas'] = df['bid_cap'].apply(lambda bc: bl.calculate_critical_roas(bc))
-    df['scaling_roas'] = df.apply(
-        lambda row: bl.calculate_scaling_roas(vat, row['gross_margin'], row['calc_frequency'] if row['calc_frequency'] > 0 else 1),
-        axis=1
-    )
-    
-    # ARPIV (if items data available)
-    if 'Items viewed' in df.columns and 'Item revenue' in df.columns:
-        df['arpiv'] = df.apply(lambda row: bl.calculate_arpiv(row['Item revenue'], row['Items viewed']), axis=1)
+    if 'ga4item_revenue' in df.columns:
+        df['calc_arpiv'] = df.apply(lambda row: bl.calculate_arpiv(row.get('ga4item_revenue', 0), row.get('ga4item_views', 0)), axis=1)
     else:
-        df['arpiv'] = 0.0
+        df['calc_arpiv'] = 0.0
+
+    df['calc_roas'] = df['meta_revenue'] / df['meta_spend'].replace(0, 1)
+
+    # Thresholds (Dynamic)
+    t_sessions = df[df['ga4lp_sessions'] > 0]['ga4lp_sessions'].quantile(0.50) if not df.empty else 100
+    t_arpiv = df[df['calc_arpiv'] > 0]['calc_arpiv'].quantile(0.50) if not df.empty else 1.0
+    # Min ARPIV check: If item data is missing, use ARPU or ROAS
     
-    # Ensure Users column exists for output
-    if 'Users' not in df.columns:
-        df['Users'] = df.get('Sessions', 0)
+    print(f"Classification Thresholds: Sessions > {t_sessions:.0f}, ARPIV > {t_arpiv:.2f}")
+
+    def classify_mece(row):
+        sessions = row.get('ga4lp_sessions', 0)
+        arpiv = row.get('calc_arpiv', 0)
+        roas = row.get('calc_roas', 0)
+        
+        # High Efficiency Signal? (Strong Desire OR Strong ROAS)
+        is_efficient = (arpiv > t_arpiv) or (roas > 2.0) # 2.0 as generic healthy ROAS, could be dynamic
+        
+        # Traffic Signal?
+        is_high_traffic = sessions > t_sessions
+        
+        if is_high_traffic and is_efficient:
+            return "MONEY_PRINTER" # Quadrant 1
+        elif not is_high_traffic and is_efficient:
+            return "HIDDEN_GEM" # Quadrant 2
+        elif is_high_traffic and not is_efficient:
+            return "BLEEDING_STAR" # Quadrant 3
+        else:
+            return "ZOMBIE" # Quadrant 4
+
+    df['calc_segment'] = df.apply(classify_mece, axis=1)
     
-    # Save Results
+    # 4. Bidding & Caps
+    df['calc_bid_cap'] = df.apply(lambda row: bl.calculate_bid_cap(row['feed_price_numeric'], vat, row['base_gross_margin']), axis=1)
+    df['calc_cost_cap'] = df['calc_bid_cap'].apply(lambda x: bl.calculate_cost_cap(x))
+
+    # --- OUTPUT ---
     out_dir = os.path.join(output_dir, brand)
     os.makedirs(out_dir, exist_ok=True)
     
-    # Remove technical columns
-    cols_to_drop = ['path_key', 'norm_url', 'Clean ID', 'price_numeric', 'temp_cluster_id']
-    df_final = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+    final_cols = [
+        # IDs
+        'feed_id', 'feed_title', 'feed_brand', 'feed_category', 'feed_price_numeric',
+        # Classification
+        'calc_segment', 'base_gross_margin',
+        # Actionable Caps
+        'calc_bid_cap', 'calc_cost_cap',
+        # Key Metrics
+        'ga4lp_sessions', 'calc_arpiv', 'calc_roas', 'calc_contribution_profit',
+        # Drill Down
+        'meta_spend', 'meta_revenue', 'ga4lp_purchases', 'ga4item_views'
+    ]
     
-    # Order columns nicely if possible for readability
-    cols = list(df_final.columns)
-    prio_cols = ['id', 'title', 'brand', 'category', 'price', 
-                 'meta_class', 'ga4_class', 'priority', 'contribution_profit', 
-                 'meta_spend', 'meta_revenue', 'meta_purchases',
-                 'gross_margin', 'calc_frequency']
+    # Select only existing
+    final_cols = [c for c in final_cols if c in df.columns]
     
-    # Sort columns: Prio first, then rest
-    sorted_cols = [c for c in prio_cols if c in cols] + [c for c in cols if c not in prio_cols]
-    df_final = df_final[sorted_cols]
-    
-    df_final.to_csv(os.path.join(out_dir, f"{brand}_Landing_Page_Final.csv"), index=False)
-    
-    skipped = df[df['priority'] == 'P8']
-    skipped.to_csv(os.path.join(out_dir, f"{brand}_Produkty_Pominięte.csv"), index=False)
+    df[final_cols].to_csv(os.path.join(out_dir, f"{brand}_Growth_Opportunities.csv"), index=False)
+    print(f"Saved Process 2 Output to: {out_dir}")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        brand_arg = sys.argv[1]
-        
-        # Load Config
         with open("business_logic.json", "r", encoding="utf-8") as f:
             config = json.load(f)
-            
-        run_pipeline(brand_arg, "Input", "Output", config)
+        run_pipeline(sys.argv[1], "Input", "Output", config)
     else:
-        print("Usage: python complete_pipeline.py <BrandName>")
+        print("Usage: python complete_pipeline.py <Brand>")
