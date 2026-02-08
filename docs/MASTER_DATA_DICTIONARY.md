@@ -58,12 +58,13 @@
 | `base_gross_margin` | *Dynamic Lookup* | Margin rate (0.0 - 1.0). |
 | `calc_net_revenue` | `Revenue / (1 + VAT)` | Revenue excluding tax. |
 | `calc_gross_profit` | `calc_net_revenue * base_gross_margin` | Gross Profit generated. |
-| `calc_contribution_profit` | `calc_gross_profit (Meta) - meta_spend` | **CM**. Profit after Ad Spend. |
+| `calc_contribution_profit` | `(calc_net_revenue * base_gross_margin) - meta_spend` | **CM**. Net profit after paying for product and advertising. |
 
 ### Efficiency (Unit Economics)
 
 | Metric | Formula | Definition |
 | :--- | :--- | :--- |
+| `calc_cr` | `ga4lp_purchases / ga4lp_sessions` | **CR**. Conversion Rate (Transactions per Session). |
 | `calc_gpps` | `calc_gross_profit (LP) / ga4lp_sessions` | **GPPS**. Gross Profit Per Session. |
 | `calc_gppv` | `calc_gross_profit (Item) / ga4item_views` | **GPPV**. Gross Profit Per View. |
 

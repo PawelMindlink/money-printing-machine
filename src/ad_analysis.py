@@ -117,25 +117,18 @@ def run_ad_analysis(brand, input_dir, output_dir):
             df.loc[mask, 'calc_price_cluster'] = clusters
 
     # C. Profitability (Ad Level)
-    # Net Rev = Rev / (1+VAT)
-    df['calc_net_revenue'] = df['meta_revenue'] / (1 + vat_rate)
-    df['calc_cogs'] = df['calc_net_revenue'] * (1 - df['base_gross_margin'])
-    df['calc_contribution_profit'] = df['meta_revenue'] - df['meta_spend'] - df['calc_cogs']
+    df['calc_contribution_profit'] = df.apply(lambda row: bl.calculate_contribution_profit(
+        row['meta_revenue'], vat_rate, row['base_gross_margin'], row['meta_spend']
+    ), axis=1)
     
     # D. New Metrics (Requested by User)
-    # Bid Cap = Net Price * Margin (Max CPA to break even)
-    # We need a 'price' to calc Bid Cap. If Feed price is missing, we can't calc it per unit, 
-    # but we can calc Break Even CPA if we knew the AOV. 
-    # The user formula: calc_net_price * base_gross_margin. 
-    # IF we have feed_price_numeric, we use it. Else 0.
-    
     df['calc_net_price'] = df['price_numeric'] / (1 + vat_rate)
     df['calc_bid_cap'] = df['calc_net_price'] * df['base_gross_margin']
     df['calc_cost_cap'] = df['calc_bid_cap'] * 0.7
     
     # ROAS Metrics
     df['calc_break_even_roas'] = 1 / df['base_gross_margin']
-    df['calc_scaling_roas'] = df['calc_break_even_roas'] * 1.2
+    df['calc_scaling_roas'] = bl.calculate_scaling_roas(vat_rate, df['base_gross_margin'])
     
     # E. Action Logic
     def decide_action(row):

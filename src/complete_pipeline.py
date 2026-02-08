@@ -134,6 +134,9 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     # GPPS (LP) - Gross Profit Per Session
     df['calc_gpps'] = df.apply(lambda row: bl.calculate_gpps(row['calc_gross_profit_lp'], row['ga4lp_sessions']), axis=1)
     
+    # CR (LP) - Conversion Rate
+    df['calc_cr'] = df.apply(lambda row: bl.calculate_cr(row['ga4lp_purchases'], row['ga4lp_sessions']), axis=1)
+    
     # GPPV (Item) - Gross Profit Per View
     df['calc_gppv'] = df.apply(lambda row: bl.calculate_gppv(row['calc_gross_profit_item'], row.get('ga4item_views', 0)), axis=1)
 
@@ -166,20 +169,20 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     # --- 5. MSC-ALGO CORE LOGIC (Waterfall) ---
     
     def run_msc_algo(row):
-        # Phase 1: Meta History
+        # Phase 1: Meta History (Ad-Level History)
         if row['meta_purchases'] >= MIN_META_TRANS:
             if row['calc_contribution_profit'] > 0:
-                # Profitable
+                # Profitable Ads
                 if row['meta_revenue'] >= P75_VOL_META and row['calc_contribution_profit'] >= P75_EFF_META:
                     return 1, "PROVEN_STAR"
                 else:
                     return 2, "PROVEN_CASH_COW"
             else:
-                # Negative History flagged implicitly by falling through
-                pass # Go to Phase 2
+                # Negative History: Ads ran but lost money.
+                # FLAG: This will push us to PRIORITY 3: RE-LAUNCH CANDIDATE in Phase 2
+                pass # Fall through to Phase 2
         
-        # Phase 2: Organic LP Potential
-        # Flag check: Did we fail Meta? (Approximate by spend > 0 but CP < 0)
+        # Phase 2: Organic LP Potential (Session-Level)
         has_negative_history = (row['meta_spend'] > 0 and row['calc_contribution_profit'] < 0)
         
         if row['ga4lp_sessions'] >= MIN_ORGANIC_SESSIONS:
@@ -196,9 +199,10 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
             elif not is_high_vol and is_high_eff:
                 return 5, "HIGH_CONV_LOW_TRAFFIC"
             else:
-                pass # Go to Phase 3 (Dog)
+                pass # Fall through to Phase 3
         
-        # Phase 3: Item Demand (Hidden)
+        # Phase 3: Item Demand (Item-Level Demand)
+        # We only check this if the item is a "Product" (implied by feed_id presence)
         if row.get('ga4item_views', 0) >= MIN_ORGANIC_SESSIONS:
             is_high_vol = row['ga4item_views'] >= P75_VOL_ITEM
             is_high_eff = row['calc_gppv'] >= P75_EFF_ITEM
@@ -210,8 +214,8 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
             else:
                 return 8, "IGNORE"
                 
-        # Default fallthrough
-        return 9, "NO_DATA"
+        # Fallback for unsignificant data
+        return 8, "IGNORE"
 
     # Apply Logic
     msc_results = df.apply(run_msc_algo, axis=1, result_type='expand')
@@ -237,7 +241,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         # Classification
         'calc_priority', 'calc_segment', 'base_gross_margin',
         # Key Drivers
-        'calc_contribution_profit', 'calc_gpps', 'calc_gppv',
+        'calc_contribution_profit', 'calc_gpps', 'calc_cr', 'calc_gppv',
         # Caps
         'calc_bid_cap', 'calc_cost_cap',
         # Drill Down

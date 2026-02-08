@@ -128,14 +128,14 @@ def assign_price_cluster(df, price_col='price_numeric', spread=0.5):
     return sub_df['temp_cluster_id'].map(id_to_label)
 
 
-def calculate_contribution_profit(meta_revenue, vat_rate, gross_margin, frequency, meta_spend):
+def calculate_contribution_profit(revenue, vat_rate, gross_margin, spend):
     """
-    Calculates Contribution Profit (CP).
-    Formula: ((MetaRevenue / (1+VAT)) * Margin * Frequency) - MetaSpend
+    Calculates Contribution Profit (CP/CM).
+    Matches MSC-ALGO v1.0 spec: (NET_REV * MARGIN_RATE) - Ad_Spend
     """
-    net_revenue = meta_revenue / (1 + vat_rate)
-    gross_profit = net_revenue * gross_margin * frequency
-    return gross_profit - meta_spend
+    net_revenue = revenue / (1 + vat_rate)
+    gross_profit = net_revenue * gross_margin
+    return gross_profit - spend
 
 
 def classify_meta_ads(contribution_profit, meta_spend):
@@ -234,16 +234,16 @@ def calculate_critical_roas(bid_cap):
     return 1 / bid_cap
 
 
-def calculate_scaling_roas(vat_rate, gross_margin, frequency):
+def calculate_scaling_roas(vat_rate, gross_margin):
     """
     Calculate Scaling ROAS (Target for profitable scaling).
-    Formula: 1 / ((1+VAT) * GrossMargin * Frequency)
-    
-    At this ROAS, we are in a healthy profitability zone for scaling.
+    Formula: 1 / (GrossMargin / (1 + VAT)) * 1.2 (for 20% buffer)
+    Simplified to match standard unit economics.
     """
-    if gross_margin <= 0 or frequency <= 0:
+    if gross_margin <= 0:
         return 0.0
-    return 1 / ((1 + vat_rate) * gross_margin * frequency)
+    break_even_roas = 1 / gross_margin
+    return break_even_roas * 1.2
 
 
 def calculate_arpiv(item_revenue, items_viewed):
@@ -278,6 +278,16 @@ def calculate_gpps(gross_profit_lp, sessions):
         return 0.0
     return gross_profit_lp / sessions
 
+
+
+def calculate_cr(transactions, sessions):
+    """
+    Calculate Conversion Rate (CR).
+    Formula: Transactions / Sessions
+    """
+    if pd.isna(sessions) or sessions <= 0:
+        return 0.0
+    return transactions / sessions
 
 def calculate_gppv(gross_profit_item, item_views):
     """
