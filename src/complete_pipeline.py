@@ -40,6 +40,10 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         print(f"Warning: Feed missing. Using empty base.")
         df = pd.DataFrame(columns=['feed_id', 'feed_title', 'feed_brand', 'feed_category', 'feed_link', 'norm_url', 'path_key', 'feed_price_str'])
 
+    # --- LANDING PAGE NAMING (Part 1) ---
+    # Will be applied later after merge, but ensuring columns exist
+
+
     # --- DIMENSION 2: GA4 ITEM (Desire) ---
     items_df = pd.DataFrame()
     prop_id = config.get('ga4_property_id')
@@ -137,7 +141,24 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         df = pd.merge(df, lp_agg, on='path_key', how='left')
 
     # --- 3. PRE-PROCESSING & FINANCIALS (Phase O) ---
-    # Fill NA
+    
+    # LANDING PAGE NAMING (Logic Refactor 1)
+    # If feed_title is missing (or is_product=False), generate friendly name
+    mask_needs_name = (df['feed_title'].isna()) | (df['feed_title'] == '') | (~df['is_product'])
+    
+    # We prioritize feed_title for proper products. for others we regenerate.
+    # Actually, prompt says: "Check if is_product is FALSE... Take norm_url... Sanitize..."
+    
+    # Apply to all non-products
+    mask_non_prod = ~df['is_product']
+    if mask_non_prod.sum() > 0:
+        # Use norm_url or feed_link
+        df.loc[mask_non_prod, 'feed_title'] = df.loc[mask_non_prod].apply(
+            lambda r: bl.generate_friendly_name(r['norm_url'] if pd.notna(r['norm_url']) else r.get('feed_link', '')),
+            axis=1
+        )
+
+    # Fill NA users/sessions
     for c in df.columns:
         if c.startswith(('meta_', 'ga4lp_', 'ga4item_')):
             df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
@@ -153,32 +174,96 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     
     df['feed_price_numeric'] = pd.to_numeric(df['feed_price_str'].astype(str).str.replace(' PLN', '').str.replace(',', '.').str.replace(' ', ''), errors='coerce').fillna(0)
     
-    # AOV Logic for Non-Product / Missing Price
-    # If price is 0, try to infer from GA4 LP AOV
-    mask_no_price = (df['feed_price_numeric'] == 0)
-    if mask_no_price.sum() > 0:
-        # Calculate AOV = Revenue / Purchases
-        # Avoid division by zero
-        ga4_aov = df.loc[mask_no_price, 'ga4lp_revenue'] / df.loc[mask_no_price, 'ga4lp_purchases'].replace(0, 1)
-        # Apply only where we have purchases (AOV > 0)
-        mask_valid_aov = (df.loc[mask_no_price, 'ga4lp_purchases'] > 0)
-        
-        # Fill numeric price
-        df.loc[mask_no_price & mask_valid_aov, 'feed_price_numeric'] = ga4_aov[mask_valid_aov]
-        # Mark as inferred (optional, but good for debugging/segment)
-        df.loc[mask_no_price & mask_valid_aov, 'is_price_inferred'] = True
+    # --- NON-PRODUCT PRICING (Logic Refactor 2) ---
+    # "The Conservative Estimation"
+    # Calculate calc_gross_price for non-products as MIN(Feed, Meta_AOV, GA4_AOV)
     
-    df['is_price_inferred'] = df.get('is_price_inferred', False) # Ensure col exists
+    # 1. Calculate AOVs
+    # Meta AOV
+    df['meta_aov'] = df['meta_revenue'] / df['meta_purchases'].replace(0, 1)
+    df.loc[df['meta_purchases'] == 0, 'meta_aov'] = 0
     
-    # Price Cluster (per margin group)
+    # GA4 AOV
+    df['ga4_aov'] = df['ga4lp_revenue'] / df['ga4lp_purchases'].replace(0, 1)
+    df.loc[df['ga4lp_purchases'] == 0, 'ga4_aov'] = 0
+    
+    df['ga4_aov'] = df['ga4lp_revenue'] / df['ga4lp_purchases'].replace(0, 1)
+    df.loc[df['ga4lp_purchases'] == 0, 'ga4_aov'] = 0
+    
+    df['calc_gross_price'] = df.apply(
+        lambda row: bl.calculate_conservative_price(
+            row.get('feed_price_numeric', 0),
+            row.get('meta_aov', 0),
+            row.get('ga4_aov', 0),
+            is_product=row.get('is_product', False)
+        ), axis=1
+    )
+    
+    # Flag 0 prices
+    df['is_price_missing'] = df['calc_gross_price'] == 0
+    
+    # Cleanup temporary columns if needed (keeping AOVs for debug)
+    df['is_price_inferred'] = ~df['is_product'] # Broad definition for now
+    
+    # Price Cluster (Logic Refactor 3)
+    # "The Core Logic"
+    # Group by MARGIN GROUP first (we use base_gross_margin as proxy for margin group)
     df['calc_price_cluster'] = 'Other'
+    
     for margin in df['base_gross_margin'].unique():
         mask = df['base_gross_margin'] == margin
         if mask.sum() > 0:
             subset = df.loc[mask].copy()
-            subset['price_numeric'] = subset['feed_price_numeric']
-            clusters = bl.assign_price_cluster(subset)
-            df.loc[mask, 'calc_price_cluster'] = clusters
+            # Use the NEW Conservative Price
+            subset['price_numeric'] = subset['calc_gross_price']
+            # Only cluster items with price > 0
+            subset_valid = subset[subset['price_numeric'] > 0].copy()
+            
+            if not subset_valid.empty:
+                clusters = bl.assign_price_cluster(subset_valid, price_col='price_numeric')
+                df.loc[subset_valid.index, 'calc_price_cluster'] = clusters
+                
+    # --- BIDDING STRATEGY (Logic Refactor 4) ---
+    # Cluster-Based Caps
+    # 1. Calc Cluster Stats
+    cluster_stats = []
+    
+    for margin in df['base_gross_margin'].unique():
+        margin_mask = df['base_gross_margin'] == margin
+        # Get unique clusters in this margin group
+        clusters = df.loc[margin_mask, 'calc_price_cluster'].unique()
+        
+        for cluster_name in clusters:
+            if pd.isna(cluster_name) or cluster_name == 'Other':
+                continue
+                
+            cluster_mask = margin_mask & (df['calc_price_cluster'] == cluster_name)
+            cluster_df = df.loc[cluster_mask]
+            
+            stats = bl.calculate_cluster_stats(
+                cluster_df, 
+                price_col='calc_gross_price', 
+                margin_rate_col='base_gross_margin', 
+                vat_rate=vat
+            )
+            stats['calc_price_cluster'] = cluster_name
+            stats['base_gross_margin'] = margin
+            cluster_stats.append(stats)
+            
+    # 2. Merge Stats back
+    if cluster_stats:
+        stats_df = pd.DataFrame(cluster_stats)
+        # Merge on Cluster AND Margin (to be safe, though Cluster names theoretically unique per run)
+        # Actually assign_price_cluster returns "TOP X PLN", which might duplicate across margin groups?
+        # assign_price_cluster logic relies on price ranges. "TOP 1000 PLN" could exist in High Margin and Low Margin groups.
+        # So we MUST merge on both.
+        
+        df = pd.merge(df, stats_df, on=['calc_price_cluster', 'base_gross_margin'], how='left')
+        
+    # Fill NaNs for items without cluster (Other/Price=0)
+    df['bid_cap'] = df.get('bid_cap', 0.0).fillna(0.0)
+    df['cost_cap'] = df.get('cost_cap', 0.0).fillna(0.0)
+    df['cluster_avg_margin'] = df.get('cluster_avg_margin', 0.0).fillna(0.0)
 
     # 1. Net Revenue (All Sources)
     df['calc_net_revenue_meta'] = df['meta_revenue'] / (1 + vat)
@@ -339,9 +424,12 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     }
     df['calc_action_type'] = df['calc_priority'].map(action_map).fillna("IGNORE")
     # 6. Actionable Caps (Standard)
-    df['calc_net_price'] = df['feed_price_numeric'] / (1 + vat)
-    df['calc_bid_cap'] = df['calc_net_price'] * df['base_gross_margin']
-    df['calc_cost_cap'] = df['calc_bid_cap'] * 0.7
+    df['calc_net_price'] = df['calc_gross_price'] / (1 + vat)
+    
+    # Renaming for export consistency with new logic
+    df['calc_bid_cap'] = df['bid_cap'] # Cluster-based
+    df['calc_cost_cap'] = df['cost_cap'] # Cluster-based
+    
     # ROAS Targets (Function of Margin & VAT)
     df['critical_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_critical_roas(vat, x))
     df['scaling_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_scaling_roas(vat, x))
@@ -379,7 +467,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     # Final Export Column Update
     final_cols = [
         # Core Identifiers
-        'feed_id', 'feed_title', 'feed_brand', 'feed_category', 'feed_price_numeric', 'is_product', 'is_price_inferred',
+        'feed_id', 'feed_title', 'feed_brand', 'feed_category', 'calc_gross_price', 'is_product', 'is_price_inferred',
         # URL for ad targeting
         'feed_link', 'norm_url',
         # Classification (MSC-ALGO + Actionable Bits)
@@ -396,8 +484,12 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         'ga4lp_sessions', 'ga4lp_revenue', 'ga4lp_purchases', 'ga4lp_first_time_purchasers',
         'ga4item_views', 'ga4item_revenue',
         # Technical/Debug
-        'calc_net_price', 'calc_bid_cap', 'calc_cost_cap'
+        'calc_net_price', 'calc_bid_cap', 'calc_cost_cap', 'cluster_avg_margin'
     ]
+    
+    
+    # Mapping old 'feed_price_numeric' to 'calc_gross_price' for backward compat in viewing logic if needed, 
+    # but we are replacing it in the output.
     
     final_cols = [c for c in final_cols if c in df.columns]
     
