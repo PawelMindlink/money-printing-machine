@@ -71,6 +71,13 @@ def analyze_koszulkowy(df):
     cols = ['feed_title', 'calc_net_price', 'calc_price_cluster', 'calc_bid_cap']
     sample = pd.concat([high, low, lp])
     print(sample[cols].to_string(index=False))
+    
+    print("\n[GHOST HUNT] Checking 'Beze Mnie Ten Przybytek' (ID 35946)")
+    ghost_hunt = df[df['feed_title'].astype(str).str.contains('35946') | df['norm_url'].astype(str).str.contains('35946')]
+    if not ghost_hunt.empty:
+        print(ghost_hunt[['feed_title', 'calc_net_price', 'calc_gross_price', 'is_product', 'feed_id']].to_string())
+    else:
+        print("Target product not found in output!")
 
 def main():
     print("Loading data...")

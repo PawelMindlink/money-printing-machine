@@ -110,7 +110,65 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         meta_df.rename(columns=lambda c: meta_map.get(c, c), inplace=True)
         aggs = {c: 'sum' for c in meta_map.values() if c in meta_df.columns}
         meta_agg = meta_df.groupby('norm_url').agg(aggs).reset_index()
-        df = pd.merge(df, meta_agg, on='norm_url', how='outer')
+        
+        # --- NEW MATCHING LOGIC (SmartMatcher Cascade) ---
+        print("[MERGE] Running SmartMatcher Cascade for Meta Ads...")
+        # 1. Initialize Matcher with Feed
+        matcher = bl.SmartMatcher(df, id_col='feed_id', url_col='norm_url')
+        
+        # 2. Enrich Meta Data with Feed IDs
+        # meta_agg has 'norm_url', we want to find matching 'feed_id' from df
+        meta_enriched = matcher.enrich_dataframe(meta_agg, url_col='norm_url')
+        
+        # 3. Merge back to Main DF
+        # We need to merge on 'feed_id' where possible, or 'norm_url' if not.
+        # Strat: 
+        #  a) Separate Meta rows that found a Feed Match vs those that didn't.
+        #  b) For Matched: Merge on feed_id.
+        #  c) For Unmatched: Append as new rows (Category/Synthetic).
+        
+        # A simpler approach that fits current structure:
+        # The main DF is the FEED. We want to attach Meta stats to it.
+        # But we ALSO want to keep Meta rows that didn't match (Synthetic).
+        
+        # Left Join Feed <- Meta (via SmartMatch)
+        # We can't just do pd.merge because the keys vary.
+        # Instead, let's map Meta stats to Feed IDs.
+        
+        # Aggregate Meta stats by matched feed_id
+        meta_matched = meta_enriched[meta_enriched['feed_feed_id'].notna()]
+        if not meta_matched.empty:
+            # Group by found feed_id (handling 1-to-many matches if any)
+            meta_to_feed = meta_matched.groupby('feed_feed_id')[list(aggs.keys())].sum().reset_index()
+            # Merge into main DF
+            df = pd.merge(df, meta_to_feed, left_on='feed_id', right_on='feed_feed_id', how='left')
+            # drop temp join col
+            df.drop(columns=['feed_feed_id'], inplace=True, errors='ignore')
+        else:
+             # Just add columns with 0
+             for col in aggs.keys():
+                 df[col] = 0.0
+
+        # Identify Unmatched Meta Rows (Ghost/Category candidates)
+        meta_unmatched = meta_enriched[meta_enriched['feed_feed_id'].isna()].copy()
+        
+        # We need to append these to the DF, but they lack feed info.
+        # Align columns
+        for col in df.columns:
+            if col not in meta_unmatched.columns:
+                meta_unmatched[col] = None
+        
+        # Set criticals
+        meta_unmatched['calc_entity_type'] = 'CATEGORY_OR_AD'
+        meta_unmatched['is_product'] = False
+        meta_unmatched['feed_brand'] = brand
+        
+        # Append
+        df = pd.concat([df, meta_unmatched], ignore_index=True)
+        
+        # Fill NaNs for metrics
+        for col in aggs.keys():
+            df[col] = df[col].fillna(0)
         
         # Synthetic Products Logic (Same as before)
         if 'meta_spend' in df.columns:
@@ -162,6 +220,18 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     for c in df.columns:
         if c.startswith(('meta_', 'ga4lp_', 'ga4item_')):
             df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            
+    # --- SANITIZE GHOST PRICES (Anomaly Detection) ---
+    print("[LOGIC] Running Sanitize Ghost Prices...")
+    # Ensure calc_gross_price is ready (it's calculated later, so we might need to place this call AFTER price calc)
+    # Actually, price is calculated in next block. We should move this call OR ensure price is calc'd first.
+    # Looking at code flow: Price is calc'd in "Logic Refactor 3" block around line 190.
+    # So we should Insert this logic AFTER that block.
+    # Let's just add a placeholder comment here and do the insertion in the correct place.
+    # But wait, the user instructions say "modify Data Merging section". 
+    # Sanitize needs PRICE, which comes later. 
+    # I will insert it after price calculation.
+    pass
 
     df['category'] = df['feed_category']
     df['product_type'] = df.get('feed_product_type', '')
@@ -201,6 +271,11 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     
     # Flag 0 prices
     df['is_price_missing'] = df['calc_gross_price'] == 0
+    
+    # --- SANITIZE GHOST PRICES (The Safety Valve) ---
+    # Clamp extreme anomalies (Ghost Products with prices > 2.5x Category Avg)
+    print("[LOGIC] Running Sanitize Ghost Prices...")
+    df = bl.sanitize_ghost_prices(df, price_col='calc_gross_price', category_col='feed_category', is_product_col='is_product')
     
     # Cleanup temporary columns if needed (keeping AOVs for debug)
     df['is_price_inferred'] = ~df['is_product'] # Broad definition for now
