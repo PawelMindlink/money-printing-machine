@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "startData": {},
+  "resultData": {
+    "runData": {
+      "Start (Manual)": [
+        {
+          "startTime": 1770810991105,
+          "executionIndex": 0,
+          "source": [],
+          "hints": [],
+          "executionTime": 2,
+          "executionStatus": "success",
+          "data": {
+            "main": [
+              [
+                {
+                  "json": {},
+                  "pairedItem": {
+                    "item": 0
+                  }
+                }
+              ]
+            ]
+          }
+        }
+      ],
+      "Load Config": [
+        {
+          "startTime": 1770810991108,
+          "executionIndex": 1,
+          "source": [
+            {
+              "previousNode": "Start (Manual)",
+              "previousNodeOutput": 0,
+              "previousNodeRun": 0
+            }
+          ],
+          "hints": [],
+          "executionTime": 1,
+          "executionStatus": "success",
+          "data": {
+            "main": [
+              [
+                {
+                  "json": {},
+                  "pairedItem": {
+                    "item": 0
+                  }
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "pinData": {},
+    "lastNodeExecuted": "Load Config"
+  },
+  "executionData": {
+    "contextData": {},
+    "nodeExecutionStack": [],
+    "metadata": {},
+    "waitingExecution": {},
+    "waitingExecutionSource": {},
+    "runtimeData": {
+      "version": 1,
+      "establishedAt": 1770810991101,
+      "source": "manual",
+      "triggerNode": {
+        "name": "Start (Manual)",
+        "type": "n8n-nodes-base.manualTrigger"
+      }
+    }
+  }
+}

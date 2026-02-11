@@ -1,0 +1,272 @@
+{
+  "brand": "Iiyama",
+  "date_range": "2025-02-11 to 2026-02-11",
+  "streams": {
+    "feed": {
+      "row_count": 313,
+      "with_price": 313,
+      "price_range": "59.00 - 29683.99 PLN",
+      "price_median": "1299.00 PLN",
+      "price_mean": "2595.17 PLN",
+      "null_ids": 0,
+      "null_titles": 0,
+      "null_links": 0,
+      "null_categories": 0,
+      "sample_categories": [
+        "305"
+      ],
+      "issues": []
+    },
+    "ga4_lp": {
+      "row_count": 10000,
+      "total_sessions": 758376,
+      "total_revenue": "15559336.61 PLN",
+      "total_transactions": 10442,
+      "pages_with_revenue": 1259,
+      "conversion_rate": "1.38%",
+      "top_5_by_sessions": [
+        {
+          "url": "(not set)",
+          "sessions": 68111,
+          "revenue": 1036779.740428,
+          "transactions": 648
+        },
+        {
+          "url": "/",
+          "sessions": 67486,
+          "revenue": 4160291.702229,
+          "transactions": 2576
+        },
+        {
+          "url": "/1748-monitory-gamingowe-g-master-red-eagle-iiyama-g-master-g2771hs-b1-red-eagle-27-ips-led-240hz-04ms-2xhdmi-displayport-adaptive-gsync-black-tuner-4948570126491.html",
+          "sessions": 33174,
+          "revenue": 213990.10991799994,
+          "transactions": 397
+        },
+        {
+          "url": "/1260-monitory-gamingowe-g-master-red-eagle-monitor-iiyama-g-master-g2770hsu-b6-27-ips-180hz-02ms-hdmi-dp-adaptive-sync-red-eagle-4948570123971.html",
+          "sessions": 12029,
+          "revenue": 111178.99001299997,
+          "transactions": 154
+        },
+        {
+          "url": "/1746-monitory-gamingowe-g-master-red-eagle-iiyama-g-master-g2471hs-b1-red-eagle-24-ips-led-240hz-04ms-2xhdmi-displayport-adaptive-gsync-black-tuner-4948570126415.html",
+          "sessions": 9848,
+          "revenue": 39092.96001,
+          "transactions": 77
+        }
+      ],
+      "top_5_by_revenue": [
+        {
+          "url": "/",
+          "sessions": 67486,
+          "revenue": 4160291.702229,
+          "transactions": 2576
+        },
+        {
+          "url": "(not set)",
+          "sessions": 68111,
+          "revenue": 1036779.740428,
+          "transactions": 648
+        },
+        {
+          "url": "/nowe-zamowienie",
+          "sessions": 4278,
+          "revenue": 996480.1617439997,
+          "transactions": 663
+        },
+        {
+          "url": "/?gad_campaignid=11601987973",
+          "sessions": 7705,
+          "revenue": 301575.88998899993,
+          "transactions": 183
+        },
+        {
+          "url": "/1748-monitory-gamingowe-g-master-red-eagle-iiyama-g-master-g2771hs-b1-red-eagle-27-ips-led-240hz-04ms-2xhdmi-displayport-adaptive-gsync-black-tuner-4948570126491.html",
+          "sessions": 33174,
+          "revenue": 213990.10991799994,
+          "transactions": 397
+        }
+      ],
+      "issues": []
+    },
+    "ga4_items": {
+      "row_count": 2113,
+      "total_views": 2189590,
+      "total_revenue": "12107782.74 PLN",
+      "total_purchases": 14014,
+      "items_with_purchases": 596,
+      "items_view_only": 1517,
+      "top_5_by_revenue": [
+        {
+          "id": "1748-1084",
+          "views": 52088,
+          "revenue": 276985.21321699995,
+          "purchases": 667
+        },
+        {
+          "id": "1220-722",
+          "views": 15690,
+          "revenue": 249336.389451,
+          "purchases": 797
+        },
+        {
+          "id": "1749-1110",
+          "views": 16043,
+          "revenue": 243538.12153699994,
+          "purchases": 494
+        },
+        {
+          "id": "1208-696",
+          "views": 8194,
+          "revenue": 192494.756336,
+          "purchases": 116
+        },
+        {
+          "id": "1585-998",
+          "views": 4323,
+          "revenue": 187008.065451,
+          "purchases": 62
+        }
+      ],
+      "issues": [
+        "Revenue mismatch vs LP: 22.2% difference"
+      ],
+      "revenue_vs_lp_diff": "22.2%"
+    },
+    "meta_ads": {
+      "row_count": 112,
+      "total_spend": "133114.72 PLN",
+      "total_revenue": "2212453.42 PLN",
+      "total_purchases": 1987.0,
+      "blended_roas": "16.62x",
+      "ads_with_sales": 43,
+      "ads_profitable": 43,
+      "ads_unprofitable": 69,
+      "median_roas": "0.00x",
+      "top_5_by_roas": [
+        {
+          "ad_id": "120221292923990234",
+          "ad_name": "ProLite XUB3293UHSN-B5 – 32”",
+          "spend": 18.92,
+          "purchases": 1.0,
+          "purchase_value": 1130.89,
+          "roas": 59.77219873150106,
+          "impressions": 1825,
+          "clicks": 28
+        },
+        {
+          "ad_id": "120241223824580234",
+          "ad_name": "Catalog 6344",
+          "spend": 39.33,
+          "purchases": 1.0,
+          "purchase_value": 1608.14,
+          "roas": 40.888380371217906,
+          "impressions": 5520,
+          "clicks": 64
+        },
+        {
+          "ad_id": "120238389716390234",
+          "ad_name": "ad1",
+          "spend": 2201.72,
+          "purchases": 118.0,
+          "purchase_value": 75343.9,
+          "roas": 34.22047308467925,
+          "impressions": 473155,
+          "clicks": 11301
+        },
+        {
+          "ad_id": "120227241156680234",
+          "ad_name": "promo czerwiec",
+          "spend": 1054.84,
+          "purchases": 23.0,
+          "purchase_value": 33982.46,
+          "roas": 32.21574835994085,
+          "impressions": 108247,
+          "clicks": 1678
+        },
+        {
+          "ad_id": "120237603177150234",
+          "ad_name": "interaktywne monitory katalog",
+          "spend": 4110.68,
+          "purchases": 118.0,
+          "purchase_value": 126949.08,
+          "roas": 30.88274446077048,
+          "impressions": 441550,
+          "clicks": 4368
+        }
+      ],
+      "bottom_5_spend_no_sales": [
+        {
+          "ad_id": "120216260347570234",
+          "ad_name": "Nowa reklama z celem Aktywność",
+          "spend": 2075.0,
+          "purchases": 0,
+          "purchase_value": 0,
+          "roas": 0.0,
+          "impressions": 305854,
+          "clicks": 5675
+        },
+        {
+          "ad_id": "120238783916330234",
+          "ad_name": "Post: „Końcówka roku? Budżet musi się zgadzać. My to...”",
+          "spend": 1610.46,
+          "purchases": 0,
+          "purchase_value": 0,
+          "roas": 0.0,
+          "impressions": 269848,
+          "clicks": 1940
+        },
+        {
+          "ad_id": "120219205627550234",
+          "ad_name": "Red Eagle GCB3480WQSU (34”)",
+          "spend": 963.31,
+          "purchases": 0,
+          "purchase_value": 0,
+          "roas": 0.0,
+          "impressions": 142165,
+          "clicks": 2355
+        },
+        {
+          "ad_id": "120218922524370234",
+          "ad_name": "Red Eagle GCB3480WQSU (34”)",
+          "spend": 733.79,
+          "purchases": 0,
+          "purchase_value": 0,
+          "roas": 0.0,
+          "impressions": 103440,
+          "clicks": 1663
+        },
+        {
+          "ad_id": "120233947298870234",
+          "ad_name": "Nowa reklama z celem Aktywność",
+          "spend": 497.44,
+          "purchases": 0,
+          "purchase_value": 0,
+          "roas": 0.0,
+          "impressions": 43929,
+          "clicks": 3483
+        }
+      ],
+      "has_pagination": false,
+      "issues": []
+    }
+  },
+  "timestamp": "2026-02-11T20:21:51.716850",
+  "cross_stream": {
+    "feed_ga4_items_overlap": {
+      "feed_products": 313,
+      "ga4_items": 2113,
+      "matched": 313,
+      "match_rate": "14.8%",
+      "ga4_only": 1800,
+      "feed_only": 0
+    },
+    "feed_ga4_lp_url_overlap": {
+      "feed_urls": 313,
+      "ga4_lp_urls": 2171,
+      "matched": 0,
+      "match_rate": "0.0%"
+    }
+  }
+}

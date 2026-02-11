@@ -1,65 +1,122 @@
 {
-  "createdAt": "2026-02-08T17:23:46.609Z",
-  "updatedAt": "2026-02-08T17:32:22.742Z",
-  "id": "0N0KIAmSrRqSdFHr",
-  "name": "MSC_ALGO_v3_Pipeline",
+  "updatedAt": "2026-02-11T15:14:38.312Z",
+  "createdAt": "2026-02-11T15:14:37.828Z",
+  "id": "hjAXUjBNPRO1ZtE7",
+  "name": "MSC_ALGO_v3_Pipeline_LEGACY",
+  "description": null,
   "active": false,
   "isArchived": false,
   "nodes": [
     {
       "parameters": {
-        "rule": {
-          "interval": [
+        "formTitle": "Money Printing Machine — Start Pipeline",
+        "formDescription": "Configure and run the MSC-ALGO pipeline for any brand.",
+        "formFields": {
+          "values": [
             {
-              "field": "cronExpression",
-              "expression": "0 6 * * *"
-            }
-          ]
-        }
-      },
-      "id": "webhook-trigger",
-      "name": "Schedule Trigger",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.1,
-      "position": [
-        240,
-        400
-      ],
-      "notes": "Run daily at 6 AM"
-    },
-    {
-      "parameters": {
-        "values": {
-          "string": [
-            {
-              "name": "brand",
-              "value": "={{ $json.brand || 'Iiyama' }}"
+              "fieldLabel": "Brand Name",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "e.g. Iiyama"
             },
             {
-              "name": "vat_rate",
-              "value": "0.23"
+              "fieldLabel": "VAT Rate",
+              "fieldType": "number",
+              "requiredField": true,
+              "placeholder": "0.23"
             },
             {
-              "name": "default_margin",
-              "value": "0.10"
+              "fieldLabel": "Default Margin",
+              "fieldType": "number",
+              "requiredField": true,
+              "placeholder": "0.10"
+            },
+            {
+              "fieldLabel": "Feed URL (XML)",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "https://example.com/feed.xml"
+            },
+            {
+              "fieldLabel": "Data Sheet URL (Google Sheets)",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "https://docs.google.com/spreadsheets/d/..."
             }
           ]
         },
         "options": {}
       },
-      "id": "config-loader",
-      "name": "Load Config",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "id": "form-trigger",
+      "name": "Pipeline Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
       "position": [
-        440,
+        240,
         400
       ],
-      "notes": "Load brand configuration"
+      "webhookId": "msc-algo-form",
+      "notes": "Formularz startowy. 5 pól: brand, VAT, domyślna marża, URL feedu, URL Google Sheet z zakładkami (margin_rules, ga4_lp, ga4_items, meta_ads)."
     },
     {
       "parameters": {
-        "url": "={{ 'https://iiyama-sklep.pl/feed_' + $json.brand.toLowerCase() + '.xml' }}",
+        "jsCode": "// ============================================================\n// GLOBAL CONFIG BUILDER\n// Parsuje dane z Form Trigger i buduje obiekt konfiguracyjny.\n// Wyciąga Sheet ID z URL Google Sheets.\n// ============================================================\n\nconst formData = $input.first().json;\n\n// Parse Sheet ID from URL\n// https://docs.google.com/spreadsheets/d/1aBcDeFgHiJkLmNoPq/edit#gid=0\nconst sheetUrl = formData['Data Sheet URL (Google Sheets)'] || '';\nconst sheetIdMatch = sheetUrl.match(/\\/d\\/([a-zA-Z0-9_-]+)/);\nconst sheetId = sheetIdMatch ? sheetIdMatch[1] : '';\n\nif (!sheetId) {\n  throw new Error('Invalid Google Sheet URL. Expected format: https://docs.google.com/spreadsheets/d/SHEET_ID/edit');\n}\n\nreturn [{\n  json: {\n    BRAND: formData['Brand Name'] || 'Unknown',\n    VAT_RATE: parseFloat(formData['VAT Rate']) || 0.23,\n    DEFAULT_MARGIN: parseFloat(formData['Default Margin']) || 0.10,\n    FEED_URL: formData['Feed URL (XML)'] || '',\n    SHEET_ID: sheetId,\n    SHEET_URL: sheetUrl,\n    \n    // Progi MSC-ALGO (stałe — nie zmieniają się per brand)\n    MSC_ALGO: {\n      MIN_META_TRANS: 10,\n      MIN_ORGANIC_SESSIONS: 300,\n      P75_METHOD: 'quantile'\n    },\n    \n    _generated_at: new Date().toISOString(),\n    _config_version: '5.0'\n  }\n}];"
+      },
+      "id": "config-builder",
+      "name": "Build Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        400
+      ],
+      "notes": "Parsuje formularz. Wyciąga SHEET_ID z URL. Buduje obiekt konfiguracyjny."
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "margin_rules"
+        },
+        "options": {
+          "range": "",
+          "headerRow": 1
+        }
+      },
+      "id": "read-margin-rules",
+      "name": "Read Margin Rules",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        660,
+        300
+      ],
+      "notes": "Czyta zakładkę 'margin_rules' z Google Sheet. Kolumny: match_type, match_value, margin_rate, note."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// MARGIN RESOLVER — 4-Tier MECE Cascade\n//\n// Input 1: Margin rules from Google Sheet (Read Margin Rules)\n// Input 2: Config object (Build Config) — via $node reference\n//\n// Outputs a function-ready config object with margin rules\n// that downstream nodes (MSC-ALGO Logic) will use.\n//\n// Priority Cascade:\n//   P1: SKU_EXACT   — exact match on feed_id\n//   P2: CATEGORY_EXACT — exact match on feed_category (case-insensitive)\n//   P3: KEYWORD     — contains match on feed_category ONLY (not title)\n//   P4: DEFAULT     — fallback from form\n// ============================================================\n\nconst rules = $input.all().map(item => ({\n  match_type:  (item.json.match_type  || '').toUpperCase().trim(),\n  match_value: (item.json.match_value || '').trim(),\n  margin_rate: parseFloat(item.json.margin_rate) || 0,\n  note:        item.json.note || ''\n}));\n\n// Validate rules\nconst validTypes = ['SKU_EXACT', 'CATEGORY_EXACT', 'KEYWORD'];\nconst validRules = rules.filter(r => validTypes.includes(r.match_type) && r.margin_rate > 0);\nconst invalidRules = rules.filter(r => !validTypes.includes(r.match_type) && r.match_type !== '');\n\nif (invalidRules.length > 0) {\n  console.log('WARNING: Invalid rule types found:', invalidRules.map(r => r.match_type));\n}\n\n// Sort by priority: SKU_EXACT first, then CATEGORY_EXACT, then KEYWORD\nconst priorityOrder = { 'SKU_EXACT': 1, 'CATEGORY_EXACT': 2, 'KEYWORD': 3 };\nvalidRules.sort((a, b) => (priorityOrder[a.match_type] || 99) - (priorityOrder[b.match_type] || 99));\n\n// Get config from upstream node\nconst config = $node['Build Config'].json;\n\nreturn [{\n  json: {\n    ...config,\n    MARGIN_RULES: validRules,\n    MARGIN_RULES_COUNT: validRules.length,\n    _margin_resolver_version: '1.0'\n  }\n}];"
+      },
+      "id": "margin-resolver",
+      "name": "Margin Resolver",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ],
+      "notes": "Sortuje reguły marżowe wg priorytetu (SKU > Category > Keyword). Waliduje dane z Sheeta. Przekazuje sorted rules jako MARGIN_RULES do kolejnych nodów."
+    },
+    {
+      "parameters": {
+        "url": "={{ $node['Build Config'].json.FEED_URL }}",
         "options": {}
       },
       "id": "fetch-feed",
@@ -67,8 +124,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        640,
-        300
+        1060,
+        200
       ],
       "notes": "Download XML product feed"
     },
@@ -84,271 +141,158 @@
       "type": "n8n-nodes-base.xml",
       "typeVersion": 1,
       "position": [
-        840,
-        300
+        1260,
+        200
       ],
       "notes": "Parse XML to JSON"
     },
     {
       "parameters": {
-        "jsCode": "// Extract products and normalize URLs\nconst items = [];\n// XML parser output structure varies, assuming root.products.product or similar\n// Check input structure in N8N execution data\nconst feedData = $input.first().json;\n\n// Helper: Normalize URL\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  return url.toLowerCase()\n    .replace(/^https?:\\/\\/(www\\.)?/, '')\n    .split('?')[0]\n    .replace(/\\/$/, '');\n}\n\n// Determine where product list is (adjust based on actual XML structure)\nlet productList = [];\nif (feedData.rss && feedData.rss.channel && feedData.rss.channel.item) {\n    productList = Array.isArray(feedData.rss.channel.item) ? feedData.rss.channel.item : [feedData.rss.channel.item];\n} else if (feedData.products && feedData.products.product) {\n    productList = Array.isArray(feedData.products.product) ? feedData.products.product : [feedData.products.product];\n}\n\nfor (const product of productList) {\n  const priceStr = product.g_price || product.price || '0';\n  items.push({\n    feed_id: product.g_id || product.id,\n    feed_title: product.g_title || product.title,\n    feed_brand: product.g_brand || product.brand,\n    feed_category: product.g_google_product_category || product.google_product_category,\n    feed_link: product.g_link || product.link,\n    norm_url: normalizeUrl(product.g_link || product.link),\n    feed_price_numeric: parseFloat(priceStr.replace(/[^0-9.]/g, '')),\n    json: product // Keep original for debugging\n  });\n}\n\nreturn items.map(item => ({ json: item }));"
+        "jsCode": "// ============================================================\n// NORMALIZE FEED + RESOLVE MARGINS\n//\n// 1. Extracts products from parsed XML\n// 2. Normalizes URLs\n// 3. Applies Margin Resolver (4-Tier MECE Cascade)\n//\n// Uses MARGIN_RULES from Margin Resolver node.\n// ============================================================\n\n// Get config + margin rules from upstream\nconst config = $node['Margin Resolver'].json;\nconst marginRules = config.MARGIN_RULES || [];\nconst defaultMargin = config.DEFAULT_MARGIN || 0.10;\n\n// Helper: Normalize URL\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  return url.toLowerCase()\n    .replace(/^https?:\\/\\/(www\\.)?/, '')\n    .split('?')[0]\n    .replace(/\\/$/, '');\n}\n\n// Helper: Resolve Margin (4-Tier MECE Cascade)\nfunction resolveMargin(feedId, feedCategory) {\n  const id = (feedId || '').trim();\n  const cat = (feedCategory || '').toLowerCase().trim();\n  \n  // Rules are pre-sorted by priority (SKU_EXACT > CATEGORY_EXACT > KEYWORD)\n  for (const rule of marginRules) {\n    const val = rule.match_value;\n    \n    switch (rule.match_type) {\n      case 'SKU_EXACT':\n        if (id === val) return { rate: rule.margin_rate, matched_rule: `SKU:${val}` };\n        break;\n      case 'CATEGORY_EXACT':\n        if (cat === val.toLowerCase()) return { rate: rule.margin_rate, matched_rule: `CAT:${val}` };\n        break;\n      case 'KEYWORD':\n        if (cat.includes(val.toLowerCase())) return { rate: rule.margin_rate, matched_rule: `KW:${val}` };\n        break;\n    }\n  }\n  \n  return { rate: defaultMargin, matched_rule: 'DEFAULT' };\n}\n\n// Extract products from XML\nconst feedData = $input.first().json;\nlet productList = [];\nif (feedData.rss && feedData.rss.channel && feedData.rss.channel.item) {\n  productList = Array.isArray(feedData.rss.channel.item)\n    ? feedData.rss.channel.item\n    : [feedData.rss.channel.item];\n} else if (feedData.products && feedData.products.product) {\n  productList = Array.isArray(feedData.products.product)\n    ? feedData.products.product\n    : [feedData.products.product];\n}\n\nconst items = productList.map(product => {\n  const priceStr = product.g_price || product.price || '0';\n  const feedId = product.g_id || product.id || '';\n  const feedCategory = product.g_google_product_category || product.google_product_category || product.product_type || '';\n  \n  // Resolve margin using 4-Tier Cascade\n  const { rate, matched_rule } = resolveMargin(feedId, feedCategory);\n  \n  return {\n    json: {\n      feed_id: feedId,\n      feed_title: product.g_title || product.title || '',\n      feed_brand: product.g_brand || product.brand || '',\n      feed_category: feedCategory,\n      feed_link: product.g_link || product.link || '',\n      norm_url: normalizeUrl(product.g_link || product.link),\n      feed_price_numeric: parseFloat(priceStr.replace(/[^0-9.]/g, '')) || 0,\n      \n      // Margin assignment\n      base_gross_margin: rate,\n      margin_matched_rule: matched_rule,\n      \n      // Config passthrough\n      _brand: config.BRAND,\n      _vat_rate: config.VAT_RATE\n    }\n  };\n});\n\nreturn items;"
       },
       "id": "normalize-feed",
-      "name": "Normalize Feed Data",
+      "name": "Normalize Feed + Margins",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1040,
-        300
-      ]
+        1460,
+        200
+      ],
+      "notes": "Parsuje produkty z XML feedu, normalizuje URL, i przypisuje marżę wg 4-Tier MECE Cascade (SKU > Category > Keyword > Default). Każdy produkt dostaje pole 'margin_matched_rule' do audytu."
     },
     {
       "parameters": {
-        "authentication": "serviceAccount",
-        "propertyId": "={{ $node['Load Config'].json.ga4_property_id }}",
-        "resource": "report",
-        "operation": "get",
-        "dimensions": [
-          "itemId"
-        ],
-        "metrics": [
-          "itemsViewed",
-          "itemRevenue",
-          "itemPurchased"
-        ]
-      },
-      "id": "fetch-ga4-items",
-      "name": "Fetch GA4 Items",
-      "type": "n8n-nodes-base.googleAnalytics",
-      "typeVersion": 2.1,
-      "position": [
-        840,
-        500
-      ]
-    },
-    {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "propertyId": "={{ $node['Load Config'].json.ga4_property_id }}",
-        "resource": "report",
-        "operation": "get",
-        "dimensions": [
-          "landingPagePath"
-        ],
-        "metrics": [
-          "sessions",
-          "totalRevenue",
-          "transactions"
-        ]
-      },
-      "id": "fetch-ga4-lp",
-      "name": "Fetch GA4 Landing Page",
-      "type": "n8n-nodes-base.googleAnalytics",
-      "typeVersion": 2.1,
-      "position": [
-        840,
-        700
-      ]
-    },
-    {
-      "parameters": {
-        "url": "https://graph.facebook.com/v19.0/act_XXXXX/insights",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "metaBusinessApi",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $node['Build Config'].json.SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "ga4_lp"
+        },
         "options": {
-          "queryParameters": {
-            "parameters": [
-              {
-                "name": "fields",
-                "value": "ad_id,spend,purchase_value,purchases,website_url"
-              },
-              {
-                "name": "level",
-                "value": "ad"
-              },
-              {
-                "name": "time_range",
-                "value": "{\"since\":\"2024-11-09\",\"until\":\"2026-02-08\"}"
-              }
-            ]
-          }
+          "range": "",
+          "headerRow": 1
         }
       },
-      "id": "fetch-meta-ads",
-      "name": "Fetch Meta Ads",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "read-ga4-lp",
+      "name": "Read GA4 LP",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
       "position": [
-        840,
+        1060,
+        500
+      ],
+      "notes": "Czyta zakładkę 'ga4_lp' z Google Sheet. Dane z GA4 Landing Page report."
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $node['Build Config'].json.SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "ga4_items"
+        },
+        "options": {
+          "range": "",
+          "headerRow": 1
+        }
+      },
+      "id": "read-ga4-items",
+      "name": "Read GA4 Items",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1060,
+        700
+      ],
+      "notes": "Czyta zakładkę 'ga4_items' z Google Sheet."
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $node['Build Config'].json.SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "meta_ads"
+        },
+        "options": {
+          "range": "",
+          "headerRow": 1
+        }
+      },
+      "id": "read-meta-ads",
+      "name": "Read Meta Ads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1060,
         900
       ],
-      "notes": "Updated to v19.0"
-    },
-    {
-      "parameters": {
-        "mode": "combine",
-        "mergeByFields": {
-          "values": [
-            {
-              "field1": "feed_id",
-              "field2": "itemId"
-            }
-          ]
-        },
-        "joinMode": "keepMatches",
-        "options": {}
-      },
-      "id": "join-items",
-      "name": "Join Feed + GA4 Items",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [
-        1240,
-        400
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "combine",
-        "mergeByFields": {
-          "values": [
-            {
-              "field1": "norm_url",
-              "field2": "website_url_normalized"
-            }
-          ]
-        },
-        "joinMode": "keepEverything",
-        "options": {}
-      },
-      "id": "join-meta",
-      "name": "Join + Meta Ads",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [
-        1440,
-        500
-      ],
-      "notes": "Outer Join"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Generate path_key from norm_url\nconst items = $input.all();\nreturn items.map(item => {\n  const row = item.json;\n  if (!row.path_key && row.norm_url) {\n    // Extract path: iiyama.pl/foo/bar -> /foo/bar\n    // Simple heuristic: find first slash\n    const parts = row.norm_url.split('/');\n    if (parts.length > 1) {\n      row.path_key = '/' + parts.slice(1).join('/');\n    } else {\n       row.path_key = '/'; // Homepage fallback\n    }\n  }\n  return item;\n});"
-      },
-      "id": "backfill-keys",
-      "name": "Backfill Path Keys",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1640,
-        500
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "combine",
-        "mergeByFields": {
-          "values": [
-            {
-              "field1": "path_key",
-              "field2": "landingPagePath"
-            }
-          ]
-        },
-        "joinMode": "enrichInput1",
-        "options": {}
-      },
-      "id": "join-lp",
-      "name": "Join + GA4 LP",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [
-        1840,
-        500
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nconst VAT = 0.23;\n\n// --- CONFIG ---\n// (In real N8N, pass these via flow variables)\nconst defaultMargin = 0.10;\nconst MIN_ORGANIC_SESSIONS = 300;\n\n// --- HELPERS ---\nfunction getP75(values) {\n  const filtered = values.filter(v => typeof v === 'number' && v > 0).sort((a, b) => a - b);\n  if (filtered.length === 0) return 1.0; // Min threshold\n  const idx = Math.floor(filtered.length * 0.75);\n  return Math.max(1.0, filtered[idx]);\n}\n\n// --- PRE-CALC THRESHOLDS ---\nconst P75_VOL_META = getP75(items.map(i => i.json.meta_revenue || 0));\nconst P75_EFF_META = getP75(items.map(i => i.json.calc_contribution_profit || 0));\nconst P75_VOL_GA = getP75(items.map(i => i.json.sessions || 0));\n// GPPS calculation is per-row, so P75_EFF_GA needs GPPS array\n// First pass calculation needed for proper P75... strict N8N usually does set nodes\n// For simplicity in this Code node, we'll do two passes.\n\n// PASS 1: Basic Metrics\nitems.forEach(item => {\n    const row = item.json;\n    row.calc_entity_type = row.feed_id ? 'PRODUCT' : 'CATEGORY';\n    row.is_product = row.calc_entity_type === 'PRODUCT';\n    \n    // Margin Logic\n    const baseMargin = row.is_product ? defaultMargin : 0.10; // Simple fallback\n    row.base_gross_margin = baseMargin;\n    \n    // GPPS\n    const lpRev = (row.totalRevenue || 0) / (1 + VAT);\n    const lpGP = lpRev * baseMargin;\n    row.calc_gpps = (row.sessions || 0) > 0 ? lpGP / row.sessions : 0;\n    \n    // CP\n    const metaRev = (row.purchase_value || 0) / (1 + VAT);\n    const metaGP = metaRev * baseMargin;\n    row.calc_contribution_profit = metaGP - (row.spend || 0);\n});\n\nconst P75_EFF_GA = getP75(items.map(i => i.json.calc_gpps || 0));\n\n// PASS 2: Waterfall Logic\nfunction runMscAlgo(row) {\n    const flags = [];\n    \n    // Meta Check\n    const metaPurch = row.purchases || 0;\n    if (metaPurch >= 10) {\n        if (row.calc_contribution_profit > 0) {\n            if ((row.purchase_value || 0) >= P75_VOL_META && row.calc_contribution_profit >= P75_EFF_META) {\n                return [1, 'PROVEN_STAR', 'High ad rev + profit'];\n            }\n            return [2, 'PROVEN_COW', 'Profitable, moderate scale'];\n        }\n        flags.push('META_LOSER');\n    }\n    \n    // GA4 LP Check\n    const sessions = row.sessions || 0;\n    if (sessions >= MIN_ORGANIC_SESSIONS) {\n        const isHighVol = sessions >= P75_VOL_GA;\n        const isHighEff = row.calc_gpps >= P75_EFF_GA;\n        \n        if (isHighVol && isHighEff) {\n             if (flags.includes('META_LOSER')) return [3, 'RECOVERY_LAUNCH', 'High organic, fix ads'];\n             return [3, 'NEW_STAR_LAUNCH', 'High organic, untapped'];\n        }\n        if (isHighVol && !isHighEff) return [4, 'FIX_LANDING_PAGE', 'High traffic, low conv'];\n        if (!isHighVol && isHighEff) return [5, 'SCALE_UP', 'Good CR, needs traffic'];\n    }\n    \n    // GA4 Item Check (Products only)\n    if (row.is_product) {\n        // Skipping specific logic for brevity, defaulting to IGNORE if no signal\n        return [8, 'IGNORE', 'Non-product/Insufficient data'];\n    }\n    \n    return [8, 'IGNORE', 'Low signal'];\n}\n\nitems.forEach(item => {\n    const [p, s, r] = runMscAlgo(item.json);\n    item.json.calc_priority = p;\n    item.json.calc_segment = s;\n    item.json.calc_reason = r;\n    item.json.calc_is_actionable = p <= 7;\n});\n\nreturn items;"
-      },
-      "id": "msc-algo-logic",
-      "name": "MSC-ALGO Logic",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2040,
-        500
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{ $json.calc_is_actionable }}",
-              "value2": true
-            }
-          ]
-        }
-      },
-      "id": "filter-actionable",
-      "name": "Filter Actionable",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        2240,
-        500
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "create",
-        "fileContent": "={{ JSON.stringify($input.all().map(i => i.json), null, 2) }}",
-        "fileName": "Growth_Opportunities.csv",
-        "options": {}
-      },
-      "id": "save-csv",
-      "name": "Save CSV",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [
-        2440,
-        500
-      ]
+      "notes": "Czyta zakładkę 'meta_ads' z Google Sheet."
     }
   ],
   "connections": {
-    "Schedule Trigger": {
+    "Pipeline Form": {
       "main": [
         [
           {
-            "node": "Load Config",
+            "node": "Build Config",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Load Config": {
+    "Build Config": {
       "main": [
         [
+          {
+            "node": "Read Margin Rules",
+            "type": "main",
+            "index": 0
+          },
           {
             "node": "Fetch Product Feed",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Fetch GA4 Items",
+            "node": "Read GA4 LP",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Fetch GA4 Landing Page",
+            "node": "Read GA4 Items",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Fetch Meta Ads",
+            "node": "Read Meta Ads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Margin Rules": {
+      "main": [
+        [
+          {
+            "node": "Margin Resolver",
             "type": "main",
             "index": 0
           }
@@ -370,117 +314,7 @@
       "main": [
         [
           {
-            "node": "Normalize Feed Data",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Normalize Feed Data": {
-      "main": [
-        [
-          {
-            "node": "Join Feed + GA4 Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch GA4 Items": {
-      "main": [
-        [
-          {
-            "node": "Join Feed + GA4 Items",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Join Feed + GA4 Items": {
-      "main": [
-        [
-          {
-            "node": "Join + Meta Ads",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Meta Ads": {
-      "main": [
-        [
-          {
-            "node": "Join + Meta Ads",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Join + Meta Ads": {
-      "main": [
-        [
-          {
-            "node": "Backfill Path Keys",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Backfill Path Keys": {
-      "main": [
-        [
-          {
-            "node": "Join + GA4 LP",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch GA4 Landing Page": {
-      "main": [
-        [
-          {
-            "node": "Join + GA4 LP",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Join + GA4 LP": {
-      "main": [
-        [
-          {
-            "node": "MSC-ALGO Logic",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "MSC-ALGO Logic": {
-      "main": [
-        [
-          {
-            "node": "Filter Actionable",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Filter Actionable": {
-      "main": [
-        [
-          {
-            "node": "Save CSV",
+            "node": "Normalize Feed + Margins",
             "type": "main",
             "index": 0
           }
@@ -489,37 +323,42 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   },
   "staticData": null,
   "meta": null,
   "pinData": null,
-  "versionId": "eef4bec7-1efc-4107-8a31-758fd7519d63",
+  "versionId": "10053189-b4a9-4533-9863-a61173e01e18",
+  "activeVersionId": null,
+  "versionCounter": 2,
   "triggerCount": 0,
   "shared": [
     {
-      "createdAt": "2026-02-08T17:23:46.616Z",
-      "updatedAt": "2026-02-08T17:23:46.616Z",
+      "updatedAt": "2026-02-11T15:14:37.837Z",
+      "createdAt": "2026-02-11T15:14:37.837Z",
       "role": "workflow:owner",
-      "workflowId": "0N0KIAmSrRqSdFHr",
+      "workflowId": "hjAXUjBNPRO1ZtE7",
       "projectId": "HdWBpWyygCpr2hPz",
       "project": {
-        "createdAt": "2025-06-04T17:12:06.615Z",
         "updatedAt": "2025-06-04T17:19:23.175Z",
+        "createdAt": "2025-06-04T17:12:06.615Z",
         "id": "HdWBpWyygCpr2hPz",
         "name": "Christopher Gibb <chris@ironcode.io>",
         "type": "personal",
         "icon": null,
+        "description": null,
+        "creatorId": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
         "projectRelations": [
           {
-            "createdAt": "2025-06-04T17:12:06.615Z",
             "updatedAt": "2025-06-04T17:12:06.615Z",
-            "role": "project:personalOwner",
+            "createdAt": "2025-06-04T17:12:06.615Z",
             "userId": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
             "projectId": "HdWBpWyygCpr2hPz",
             "user": {
+              "updatedAt": "2026-02-11T09:26:12.000Z",
               "createdAt": "2025-06-04T17:12:05.084Z",
-              "updatedAt": "2026-01-19T09:51:41.708Z",
               "id": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
               "email": "chris@ironcode.io",
               "firstName": "Christopher",
@@ -542,9 +381,9 @@
                   "lastShownAt": 1768816299172
                 }
               },
-              "role": "global:owner",
               "disabled": false,
               "mfaEnabled": false,
+              "lastActiveAt": "2026-02-11",
               "isPending": false
             }
           }
@@ -552,5 +391,6 @@
       }
     }
   ],
-  "tags": []
+  "tags": [],
+  "activeVersion": null
 }

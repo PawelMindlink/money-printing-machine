@@ -1,94 +1,121 @@
 {
+  "updatedAt": "2026-02-11T11:56:15.993Z",
   "createdAt": "2026-02-07T19:21:20.733Z",
-  "updatedAt": "2026-02-08T17:09:19.220Z",
   "id": "ApRz23ENs3s5HMOl",
-  "name": "Test_GA4_Feed_Join",
+  "name": "MSC_ALGO_v4_Pipeline",
+  "description": null,
   "active": false,
   "isArchived": false,
   "nodes": [
     {
       "parameters": {},
       "id": "manual-trigger",
-      "name": "Manual Trigger",
+      "name": "Start (Manual)",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
-        250,
-        300
+        240,
+        400
       ],
-      "notes": "Start test manually"
+      "notes": "Kliknij 'Execute' w n8n, żeby uruchomić. Potem zamienimy na Schedule."
     },
     {
       "parameters": {
-        "jsCode": "return [{ json: { brand: 'Bushido' } }];"
+        "values": {
+          "string": [
+            {
+              "name": "brand",
+              "value": "Iiyama"
+            },
+            {
+              "name": "feed_url",
+              "value": "https://iiyama-sklep.pl/modules/pricewars2/xml/alias/facebook353re3534sdfdfdef.xml"
+            }
+          ],
+          "number": [
+            {
+              "name": "vat_rate",
+              "value": 0.23
+            },
+            {
+              "name": "default_margin",
+              "value": 0.1
+            }
+          ]
+        },
+        "options": {}
       },
-      "id": "set-brand",
-      "name": "Set Brand",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "load-config",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
       "position": [
-        450,
-        300
+        460,
+        400
       ],
-      "notes": "Test with Bushido first"
+      "notes": "Konfiguracja brandu. Odpowiednik business_logic.json w Pythonie."
+    }
+    {
+      "parameters": {
+        "url": "={{ $node['Load Config'].json.feed_url }}",
+        "options": {}
+      },
+      "id": "fetch-feed",
+      "name": "Fetch Feed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        400
+      ],
+      "notes": "Pobiera surowy XML z adresu podanego w Load Config."
     },
     {
       "parameters": {
-        "command": "={{ 'python \"c:/Users/Paweł/Documents/GitHub/Money Printing Machine/src/test_n8n_join.py\" ' + $json.brand }}"
+        "options": {
+          "explicitArray": false,
+          "ignoreAttrs": true
+        }
       },
-      "id": "test-join",
-      "name": "Test GA4+Feed Join",
-      "type": "n8n-nodes-base.executeCommand",
+      "id": "xml-parser",
+      "name": "Parse XML",
+      "type": "n8n-nodes-base.xml",
       "typeVersion": 1,
       "position": [
-        650,
-        300
+        900,
+        400
       ],
-      "notes": "Runs join test and outputs match rate"
-    },
-    {
-      "parameters": {
-        "jsCode": "const output = $input.first().json.stdout || $input.first().json.stderr || 'No output';\nreturn [{ json: { result: output, timestamp: new Date().toISOString() } }];"
-      },
-      "id": "parse-result",
-      "name": "Parse Result",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        850,
-        300
-      ],
-      "notes": "Formats output for display"
+      "notes": "Zmienia surowy XML na format JSON, który rozumiemy."
     }
   ],
   "connections": {
-    "Manual Trigger": {
+    "Start (Manual)": {
       "main": [
         [
           {
-            "node": "Set Brand",
+            "node": "Load Config",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Set Brand": {
+    "Load Config": {
       "main": [
         [
           {
-            "node": "Test GA4+Feed Join",
+            "node": "Fetch Feed",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Test GA4+Feed Join": {
+    "Fetch Feed": {
       "main": [
         [
           {
-            "node": "Parse Result",
+            "node": "Parse XML",
             "type": "main",
             "index": 0
           }
@@ -97,37 +124,42 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   },
   "staticData": null,
   "meta": null,
   "pinData": null,
-  "versionId": "74738ac4-ba14-4531-8e26-69e269977abc",
+  "versionId": "9d3b62f0-5fc4-4994-9d23-5f4ebf3abae9",
+  "activeVersionId": null,
+  "versionCounter": 4,
   "triggerCount": 0,
   "shared": [
     {
-      "createdAt": "2026-02-07T19:21:20.769Z",
       "updatedAt": "2026-02-07T19:21:20.769Z",
+      "createdAt": "2026-02-07T19:21:20.769Z",
       "role": "workflow:owner",
       "workflowId": "ApRz23ENs3s5HMOl",
       "projectId": "HdWBpWyygCpr2hPz",
       "project": {
-        "createdAt": "2025-06-04T17:12:06.615Z",
         "updatedAt": "2025-06-04T17:19:23.175Z",
+        "createdAt": "2025-06-04T17:12:06.615Z",
         "id": "HdWBpWyygCpr2hPz",
         "name": "Christopher Gibb <chris@ironcode.io>",
         "type": "personal",
         "icon": null,
+        "description": null,
+        "creatorId": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
         "projectRelations": [
           {
-            "createdAt": "2025-06-04T17:12:06.615Z",
             "updatedAt": "2025-06-04T17:12:06.615Z",
-            "role": "project:personalOwner",
+            "createdAt": "2025-06-04T17:12:06.615Z",
             "userId": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
             "projectId": "HdWBpWyygCpr2hPz",
             "user": {
+              "updatedAt": "2026-02-11T09:26:12.000Z",
               "createdAt": "2025-06-04T17:12:05.084Z",
-              "updatedAt": "2026-01-19T09:51:41.708Z",
               "id": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
               "email": "chris@ironcode.io",
               "firstName": "Christopher",
@@ -150,9 +182,9 @@
                   "lastShownAt": 1768816299172
                 }
               },
-              "role": "global:owner",
               "disabled": false,
               "mfaEnabled": false,
+              "lastActiveAt": "2026-02-11",
               "isPending": false
             }
           }
@@ -160,5 +192,6 @@
       }
     }
   ],
-  "tags": []
+  "tags": [],
+  "activeVersion": null
 }

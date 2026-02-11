@@ -1,182 +1,177 @@
-# Creative Data Pipeline - System Architecture
+# SYSTEM ARCHITECTURE
 
-> **Version:** 2.0 (Operation Ugly Truth)
-> **Goal:** Automated Massive Native Ad Testing (MNAT)
-> **Core Philosophy:** The Creative Matrix (1 Product × 3 Radical Styles)
+## 1. Data Preparation (Wsad)
 
----
+The foundation of the Money Printing Machine is the harmonization of three distinct data sources into a single, cohesive dataset.
 
-## 1. System Overview
+### Inputs
 
-The Creative Data Pipeline transforms raw transactional data and unstructured customer feedback into high-variance creative assets. It abandons the search for the "perfect ad" in favor of generating multiple conflicting viewpoints (The Matrix) to test what resonates.
+* **Product Feed (`feed.csv` / XML)**: The source of truth for inventory. Contains SKU, Title, Category, Price, and Links.
+* **Meta Ads Export (`meta_ads.csv`)**: Performance data from ad campaigns, aggregated by Ad Link.
+* **GA4 Export (`ga4_export.csv`)**: User behavior data (Sessions, Revenue, Purchases) aggregated by Landing Page Path.
+* **Configuration (`config.json`)**: Brand-specific settings (VAT rates, Margin restrictions, Account ID).
 
-```mermaid
-graph LR
-    subgraph Input
-    A[Transactional Data<br>Growth_Opportunities.csv]
-    B[Voice of Customer<br>Harvest JSONs]
-    C[Brand Capital<br>Constraints.md]
-    end
+### Setup
 
-    subgraph Transformation
-    D[ETL Bridge v2<br>Match & Enrich]
-    end
+A **Google Service Account** is used to securely authenticate with the GA4 API. The credentials JSON path is injected via environment variables or config, ensuring secure access to granular traffic data without manual exports.
 
-    subgraph Output
-    E[Master Creative Feed<br>CSV]
-    end
+### Standardization
 
-    subgraph Generation
-    F[Creative Matrix v2<br>Radical Persona Injection]
-    G[Asset Bundle<br>3 Styles x 3 Formats]
-    end
+To merge these disparate sources, **URL Normalization** is critical. We strip all non-essential elements to create a common join key:
 
-    A --> D
-    B --> D
-    C -.-> F
-    D --> E
-    E --> F
-    F --> G
-```
+1. **Protocol Removal**: `https://` and `http://` are removed.
+2. **Domain Stripping**: `www.domain.com` is removed, leaving only the path.
+3. **Parameter Cleaning**: All query parameters (after `?`) are discarded.
+4. **Extension Handling**: `.html`, `.php` are treated consistently.
+5. **Trailing Slashes**: Removed to ensure `/product` matches `/product/`.
 
 ---
 
-## 2. Data Sources & Ingestion
+## 2. Data Merging (Scalanie)
 
-### Unstructured Input (The "Red Lines")
+### The Join Logic
 
-- **Source:** Onboarding Transcripts (DOCX)
-- **Artifact:** `config/BRAND_CONSTRAINTS.md`
-- **Logic:** Identifies "Hard Constraints" (Vetoes) vs "Soft Context" (Flavor).
-- **Usage:** Used by the Generator to block illegal claims (e.g., "Factory Calibrated" on budget models).
+The central nervous system of the architecture is the **Left Join** on the normalized URL logic.
 
-### Structured Input (The "Bag of Tags")
+1. **Base Layer**: The Product Feed. Every active product is a row.
+2. **Enrichment 1 (Meta)**: We join Meta Ads data.
+    * *Unmatched Ads:* Ads pointing to URLs not in the feed (e.g., Category Pages, Homepage) are captured via an **Outer Join** strategy and labeled as `CATEGORY_OR_AD`.
+3. **Enrichment 2 (GA4)**: We join GA4 Landing Page data.
+    * *Path Matching:* We use `extract_path(url)` to align Feed Links with GA4 Page Paths.
 
-- **Source:** `Assessment_Report` (CSV) + `Simulated Harvest` (JSON)
-- **Logic:** We do not map 1:1. We create "Pools" of tags (Pains, Dreams, Slang) that the Generator can sample from.
-- **Deep Benefit Mapping:** The `TECH_TRANSLATOR` does not just translate specs; it translates *features* into *advantages*.
-  - *Input:* `165Hz`
-  - *Regex:* `r'\b165\s*Hz\b'`
-  - *Output:* `Widzisz wroga zanim on zobaczy Ciebie (Przewaga 165Hz)`
+### Handling Missing Data
 
----
+* **Synthetic Rows**: If a high-spending ad points to a non-existent feed URL, a "Synthetic Product" row is created to ensure the spend is tracked and optimized.
+* **Zero-Filling**: Missing metrics (Spend, Revenue) are filled with 0 to allow mathematical operations.
 
-## 3. The ETL Transformation Engine
+### The SmartMatcher Cascade (Anti-Fragile Linking)
 
-**Script:** `src/creative_data_bridge_v2.py`
+To solve the "Ghost Product" problem (where Meta URLs don't match Feed URLs exactly), we use a multi-layered **SmartMatcher** logic:
 
-### core Logic: The Matching Cascade
+1. **Level 1: Silver Bullet (Product ID)**: Explicitly matches Meta Content IDs with Feed IDs.
+2. **Level 2: ID Extractor (The Hero)**: Uses regex to pull numeric SKU IDs (4+ digits) from the URL path (e.g., `/35946-product.html` -> `35946`).
+3. **Level 3: Semantic Tokenizer (Fuzzy Match)**: If IDs are missing, the system tokenizes URLs and calculates subset inclusion. If >80% of tokens match, it links the records.
 
-The system must determine the product's "Vertical" (Gaming, Office, Signage) to apply the correct VOC data.
+### Safety Valve (Anomaly Detection)
 
-1. **Priority 1: SKU Regex Match**
-    - `GB*`, `G-Master` -> **Gaming**
-    - `LH*`, `TE*` -> **Signage**
-    - `XUB*` -> **ProGraphics**
-    - `ProLite` -> **Office**
-2. **Priority 2: Category Fallback**
-    - If SKU fails, check `feed_category` string for keywords.
-3. **Default:** Office (Safe fallback).
+Even with SmartMatcher, some matches might be risky. We implement a **Sanitize Ghost Prices** logic:
 
-### The "So What?" Engine (Tech Translator)
-
-Transforms specs into emotional leverage.
-
-1. **Regex Extraction:** Scans `title` + `category` for patterns.
-2. **SKU Fallback:** If Regex finds nothing, looks up optimal benefits in `SKU_FALLBACK_SPECS` dictionary (hardcoded for top-tier products).
-3. **Sanitization:** Joins benefits with ` | ` for CSV compatibility.
+* **The Check**: If a product has no Feed ID but has high revenue, it's flagged.
+* **Anomaly**: If price > 2.5x the Category Average, the item is considered a "Ghost".
+* **Action**: The price is clamped to the Category Average, and the item is marked as `calc_is_actionable = False` to prevent over-bidding.
 
 ---
 
-## 4. The Creative Matrix Engine
+## 3. Business Logic & Account Structure (Obliczenia)
 
-**Script:** `src/creative_generator_v2.py`
+### Price Clustering Algorithm (The Core Logic)
 
-This is the system's core value constraint. It forces every product through 3 distinct, conflicting psychological frameworks.
+To optimize Meta Ads Bidding, we group products into **Price Clusters**. This allows us to set Bid Caps that are appropriate for a *range* of products, rather than managing thousands of individual bids.
 
-### The 3 Matrix Styles (The "Quadrants")
+**The Algorithm:**
 
-#### 🏛️ AESTHETIC (The Whisper)
+1. **Split by Margin Group**: Inventory is first divided by `calc_margin_group` (e.g., High Margin vs. Low Margin).
+2. **Sort**: Products within a group are sorted by `calc_gross_price` Descending.
+3. **Cluster Creation**:
+    * The most expensive product becomes the **Leader** of Cluster 1.
+    * Subsequent products are added to Cluster 1 **IF**:
+        $$MemberPrice \ge \frac{LeaderPrice}{1.5}$$
+    * *Logic:* The Leader's price cannot be more than 150% of the cheapest member. This prevents a 1000 PLN product from sharing a bid cap with a 100 PLN product.
+4. **Iteration**: If a product fails the check, it becomes the Leader of Cluster 2, and the process repeats.
 
-* **Goal:** Status, Perfection, Identity.
-- **System Prompt:** "Minimalist Brand Strategist. Use sentence fragments. Whisper power."
-- **Visuals:** Studio lighting, 8K, no clutter, floating product.
-- **Use Case:** Retargeting, High-Income.
+### Bidding Strategy
 
-#### 📸 NATIVE RAW (The Scream)
+Bids are calculated at the **Cluster Level**:
 
-* **Goal:** Trust, Authenticity, "Anti-Marketing".
-- **System Prompt:** "Angry Forum User. Use slang. **ADMIT A FLAW** to prove the win."
-- **Visuals:** Flash ON, messy desk, grain, POV shot, fingerprint on bezel.
-- **Use Case:** Cold Traffic, Feed Scroll-stoppers.
+1. **Cluster Average Margin**: We calculate the mean Contribution Profit (Unit Margin) of all products in the cluster.
+2. **Bid Cap (Efficiency Target)**:
+    $$BidCap = ClusterAvgMargin \times 30\%$$
+3. **Cost Cap (Breakeven Limit)**:
+    $$CostCap = ClusterAvgMargin \times 100\%$$
+*Result:* All products in "Cluster A" receive identical Bid/Cost caps, stabilizing delivery.
 
-#### ⚠️ PATTERN INTERRUPT (The Alarm)
+### Non-Product Logic
 
-* **Goal:** Curiosity, FOMO, Warning.
-- **System Prompt:** "Tabloid Editor. 'Us vs Them' framing. Warning/Leak headline."
-- **Visuals:** Split screen, red circles (MS Paint style), yellow warning tape, high contrast.
-- **Use Case:** High CTR, Problem-Aware.
+For Landing Pages (Categories) without a single price:
 
-### Brand Safety Layer
+* **Naming**: Titles are auto-generated from URLs (e.g., `domain.com/office-monitors` -> "Office Monitors").
+* **Pricing**: A "Conservative Estimation" is used:
+    $$Price = MIN(FeedPrice, MetaAOV, GA4AOV)$$
 
-Before saving any asset, the script runs `apply_brand_safety(text)`:
+### Campaign Priority (`calc_priority`)
 
-1. **Vetoes:** Removes banned phrases (e.g., "intuitive controls" which is false for iiyama).
-2. **Rewrites:** Transforms negative sentiment into positive framing where allowed (e.g., "Service sucks" -> "Service is slow, BUT...").
+Products are assigned a Priority Label driving the Campaign Structure:
 
----
-
-## 5. Deployment & Usage
-
-### Directory Structure
-
-```
-Project/
-├── Input/
-│   └── [Brand]/
-│       ├── RAW_HARVEST_DATA_*.json
-│       └── [Brand]_Growth_Opportunities.csv
-├── Src/
-│   ├── creative_data_bridge_v2.py  # ETL
-│   └── creative_generator_v2.py    # Generator
-├── Output/
-│   └── [Brand]/
-│       ├── MASTER_CREATIVE_FEED_[Brand].csv
-│       └── output_matrix/          # Final Assets
-            ├── [Product]/
-            │   ├── Aesthetic/
-            │   ├── Native/
-            │   └── Interrupt/
-```
-
-### Execution Commands
-
-1. **Run ETL:**
-
-    ```bash
-    python src/creative_data_bridge_v2.py Iiyama
-    ```
-
-2. **Run Generator:**
-
-    ```bash
-    python src/creative_generator_v2.py Iiyama
-    ```
+* **P1 (Proven Star)**: High Volume + High Efficiency (Scale Aggressively).
+* **P2 (Proven Cow)**: High Efficiency + Moderate Volume (Maintain).
+* **P3 (New Star)**: High Organic Traffic + High Potential (Launch Ads).
+* **P4 (Fix LP)**: High Traffic + Low Conversion (UX Audit required).
+* **Legacy/Deprecation Note**: Variables like `MIN_CONFIDENCE` have been replaced by specific gates:
+  * `MIN_META_TRANS` (default 10): Minimum purchases to trust Ad data.
+  * `MIN_ORGANIC_SESSIONS` (default 300): Semantic floor for statistical significance.
 
 ---
 
-## 6. Maintenance & Troubleshooting
+## 4. Feature Extraction (Cechy)
 
-### Common Issues
+### Tech Translator
 
-* **Empty Tech Translator:** If a product output refers to "General" specs, add its SKU pattern to `SKU_FALLBACK_SPECS` in `creative_data_bridge_v2.py`.
-- **Wrong Vertical:** If a Gaming monitor is classified as Office, update the Regex pattern in `match_product_to_vertical`.
-- **Banned Phrases in Output:** Add new negative phrases to `BRAND_SAFETY_VETOES` in `creative_generator_v2.py`.
+Raw specs are converted into Consumer Benefits using a Regex Map (`business_logic_layer.py`).
 
-### Extensibility
+* *Input:* `165Hz`, `1ms`, `IPS`
+* *Regex Match:* `r'\b165Hz\b'` -> "Płynność" (Fluidity)
+* *Output:* A "Benefits Tag" used for Copywriting.
 
-To add a 4th style (e.g., "Educational"):
+### Feature-to-Benefit
 
-1. Define `EDUCATIONAL` in `STYLE_PRESETS` inside `creative_generator_v2.py`.
-2. Add `EDUCATIONAL` prompt logic to `generate_copy` and `generate_image_prompt`.
-3. Add to the loop in `run_matrix_generator`.
+We map physical attributes to emotional outcomes:
+
+* `4K Resolution` -> "See every detail" (Function) -> "Dominate the battlefield" (Emotion/Gaming).
+
+---
+
+## 5. Psychographics (Psychografia)
+
+### Voice of Customer (Harvest)
+
+We ingest `Harvest JSONs` containing raw user research (Reviews, Reddit threads, Surveys).
+
+* **Baskets**: Insights are categorized into `PAIN`, `DREAM`, `OBJECTION`.
+
+### The Bridge
+
+The `creative_data_bridge.py` script maps these insights to Products based on **Verticals**:
+
+* A "Gaming Monitor" inherits "Gaming" insights (e.g., "I hate screen tearing").
+* An "Office Monitor" inherits "Productivity" insights (e.g., "My eyes hurt after 8 hours").
+
+---
+
+## 6. Creative Briefing (Briefy)
+
+ The system synthesizes data into a structured **Markdown Brief** for the Creative Team (or AI Agent).
+
+* **Sections**:
+    ***Avatar**: Who are we talking to? (From Psychographics).
+  * **Problem/Agitation**: What hurts them? (From `PAIN` basket).
+    ***Solution**: How does this product fix it? (Tech Translator).
+  * **Brand Constraints**: "Red Lines" (e.g., "Never use red text") are injected from `BRAND_CONSTRAINTS.md`.
+
+---
+
+## 7. Asset Generation (Generowanie)
+
+### The Matrix
+
+We generate 3 distinct creative variants per brief:
+
+1. **Aesthetic**: High-design, beautiful visuals. Focus on "Desire".
+2. **Native**: User-Generated-Content style. Focus on "Trust" and "Authenticity". pattern.
+3. **Interrupt**: Bold, high-contrast, "Weird". Focus on "Attention".
+
+### Output
+
+Final assets are organized by SKU and Variation:
+
+* `/Output/Brand/SKU_123/Aesthetic/Copy.txt`
+* `/Output/Brand/SKU_123/Aesthetic/Img_Prompt.txt`

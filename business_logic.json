@@ -27,7 +27,7 @@
         {
             "name": "Bushido",
             "ga4_property_id": "297192186",
-            "vat_rate": 0.23,
+            "vat_rate": 0.19,
             "margin_config": {
                 "default_rate": 0.58,
                 "category_overrides": [
