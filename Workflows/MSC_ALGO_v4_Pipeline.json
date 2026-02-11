@@ -230,9 +230,9 @@
                 460
             ],
             "credentials": {
-                "googleServiceAccountApi": {
-                    "id": "GOOGLE_SA_CREDENTIAL_ID",
-                    "name": "Google Analytics SA"
+                "googleApi": {
+                    "id": "HDkQgqGFjUakc4Ct",
+                    "name": "Google Service Account account"
                 }
             }
         },
@@ -269,9 +269,9 @@
                 680
             ],
             "credentials": {
-                "googleServiceAccountApi": {
-                    "id": "GOOGLE_SA_CREDENTIAL_ID",
-                    "name": "Google Analytics SA"
+                "googleApi": {
+                    "id": "HDkQgqGFjUakc4Ct",
+                    "name": "Google Service Account account"
                 }
             }
         },
@@ -326,9 +326,9 @@
                 900
             ],
             "credentials": {
-                "httpHeaderAuth": {
-                    "id": "META_BEARER_CREDENTIAL_ID",
-                    "name": "Meta Ads Bearer"
+                "httpBearerAuth": {
+                    "id": "RAbkfjgnH4OLFDrm",
+                    "name": "Bearer Auth account"
                 }
             }
         },
@@ -395,6 +395,53 @@
                 1900,
                 1120
             ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================================\n// MSC-ALGO CLASSIFIER\n// Hero / Scale / Cut / Monitor\n// ============================================================\nconst config = $node['Margin Resolver'].json;\nconst MIN_META_TRANS = (config.MSC_ALGO || {}).MIN_META_TRANS || 10;\nconst MIN_ORGANIC_SESSIONS = (config.MSC_ALGO || {}).MIN_ORGANIC_SESSIONS || 300;\nconst VAT = config.VAT_RATE || 0.23;\n\nreturn $input.all().map(item => {\n  const p = item.json;\n  const price = p.feed_price || 0;\n  const margin = p.base_gross_margin || 0.10;\n  const spend = p.meta_spend || 0;\n  const metaRev = p.meta_revenue || 0;\n  const metaPurch = p.meta_revenue > 0 ? Math.max(p.meta_spend > 0 ? 1 : 0, Math.round(metaRev / price) || 0) : 0;\n  const ga4Purch = p.ga4_purchases || 0;\n  const sessions = p.lp_sessions || 0;\n\n  // Contribution Profit = Revenue * Margin * (1 - VAT) - Spend\n  const cp = metaRev * margin * (1 - VAT) - spend;\n  const roas = spend > 0 ? metaRev / spend : 0;\n  const breakeven_roas = margin > 0 ? 1 / (margin * (1 - VAT)) : 999;\n\n  // Classification Waterfall\n  let msc_class = 'MONITOR';\n  let msc_reason = '';\n\n  if (spend > 0 && roas >= breakeven_roas * 1.5 && ga4Purch >= MIN_META_TRANS) {\n    msc_class = 'HERO';\n    msc_reason = `ROAS ${roas.toFixed(1)}x >= ${(breakeven_roas*1.5).toFixed(1)}x, ${ga4Purch} purchases`;\n  } else if (spend > 0 && roas >= breakeven_roas && ga4Purch >= 3) {\n    msc_class = 'SCALE';\n    msc_reason = `ROAS ${roas.toFixed(1)}x >= BE ${breakeven_roas.toFixed(1)}x, ${ga4Purch} purchases`;\n  } else if (spend > 0 && (roas < breakeven_roas * 0.5 || cp < -100)) {\n    msc_class = 'CUT';\n    msc_reason = `ROAS ${roas.toFixed(1)}x < ${(breakeven_roas*0.5).toFixed(1)}x, CP=${cp.toFixed(0)} PLN`;\n  } else {\n    msc_class = 'MONITOR';\n    msc_reason = spend > 0 ? `ROAS ${roas.toFixed(1)}x near BE, needs more data` : `No Meta spend, organic sessions: ${sessions}`;\n  }\n\n  return { json: {\n    brand: config.BRAND,\n    sku: p.feed_id,\n    title: p.feed_title,\n    price: price,\n    category: p.feed_category,\n    margin: margin,\n    // GA4\n    ga4_views: p.ga4_views,\n    ga4_purchases: ga4Purch,\n    ga4_revenue: p.ga4_revenue,\n    lp_sessions: sessions,\n    lp_revenue: p.lp_revenue,\n    // Meta\n    meta_spend: spend,\n    meta_revenue: metaRev,\n    meta_roas: roas,\n    // Financials\n    contribution_profit: Math.round(cp * 100) / 100,\n    breakeven_roas: Math.round(breakeven_roas * 100) / 100,\n    // Classification\n    msc_class: msc_class,\n    msc_reason: msc_reason,\n    // Flags\n    _has_ga4_item: p._has_ga4_item,\n    _has_ga4_lp: p._has_ga4_lp,\n    _has_meta: p._has_meta\n  }};\n});"
+            },
+            "id": "msc-classifier",
+            "name": "MSC-ALGO Classifier",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                2700,
+                500
+            ],
+            "notes": "Hero / Scale / Cut / Monitor classification based on ROAS vs Breakeven ROAS and Contribution Profit."
+        },
+        {
+            "parameters": {
+                "operation": "append",
+                "documentId": {
+                    "__rl": true,
+                    "mode": "id",
+                    "value": "={{ $node['Margin Resolver'].json.SHEET_ID }}"
+                },
+                "sheetName": {
+                    "__rl": true,
+                    "mode": "name",
+                    "value": "msc_algo_output"
+                },
+                "columns": {
+                    "mappingMode": "autoMapInputData"
+                },
+                "options": {}
+            },
+            "id": "output-sheets",
+            "name": "Output to Google Sheets",
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4.5,
+            "position": [
+                3000,
+                500
+            ],
+            "credentials": {
+                "googleSheetsOAuth2Api": {
+                    "id": "4rQw16Pw2ajSyr33",
+                    "name": "Google Sheets account"
+                }
+            }
         }
     ],
     "connections": {
@@ -588,6 +635,28 @@
                 [
                     {
                         "node": "Save Brand Config",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merger Node": {
+            "main": [
+                [
+                    {
+                        "node": "MSC-ALGO Classifier",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "MSC-ALGO Classifier": {
+            "main": [
+                [
+                    {
+                        "node": "Output to Google Sheets",
                         "type": "main",
                         "index": 0
                     }
