@@ -4,7 +4,7 @@
         {
             "parameters": {
                 "formTitle": "MSC-ALGO Pipeline",
-                "formDescription": "Wpisz dane klienta. Znane brandy (Iiyama, Bushido, Koszulkowy, Mindlink) maja auto-resolve GA4/Meta ID. Dla nowych brandow podaj GA4 Property ID i Meta Account ID — system zapamięta je na przyszłość.",
+                "formDescription": "Wpisz dane klienta. Znane brandy (Iiyama, Bushido, Koszulkowy, Mindlink) maja auto-resolve GA4/Meta ID.",
                 "formFields": {
                     "values": [
                         {
@@ -53,13 +53,13 @@
                             "fieldLabel": "GA4 Property ID (opcjonalne)",
                             "fieldType": "text",
                             "requiredField": false,
-                            "placeholder": "np. 280127077 — auto dla znanych brandow"
+                            "placeholder": "np. 280127077"
                         },
                         {
                             "fieldLabel": "Meta Account ID (opcjonalne)",
                             "fieldType": "text",
                             "requiredField": false,
-                            "placeholder": "np. act_1438113836305522 — auto dla znanych brandow"
+                            "placeholder": "np. act_1438113836305522"
                         }
                     ]
                 },
@@ -77,7 +77,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// ============================================================\n// PARSE FORM — extract Sheet ID + basic form fields\n// Lightweight: just parsing, no lookups yet\n// ============================================================\nconst form = $input.first().json;\n\nconst brandName = (form['Brand Name'] || '').trim();\nif (!brandName) throw new Error('Brand Name is required.');\n\nconst sheetUrl = form['Data Sheet URL (Google Sheets)'] || '';\nconst sheetIdMatch = sheetUrl.match(/\\/d\\/([a-zA-Z0-9_-]+)/);\nconst sheetId = sheetIdMatch ? sheetIdMatch[1] : '';\nif (!sheetId) throw new Error('Invalid Google Sheet URL.');\n\nconst now = new Date();\nconst y1ago = new Date(now);\ny1ago.setFullYear(y1ago.getFullYear() - 1);\n\nreturn [{ json: {\n  _brand_name: brandName,\n  _brand_key: brandName.toLowerCase(),\n  _vat_rate: parseFloat(form['VAT Rate']) || 0.23,\n  _default_margin: parseFloat(form['Default Margin']) || 0.10,\n  _feed_url: (form['Feed URL (XML)'] || '').trim(),\n  _sheet_id: sheetId,\n  _date_from: (form['Date From (YYYY-MM-DD)'] || '').trim() || y1ago.toISOString().split('T')[0],\n  _date_to: (form['Date To (YYYY-MM-DD)'] || '').trim() || now.toISOString().split('T')[0],\n  _form_ga4_id: (form['GA4 Property ID (opcjonalne)'] || '').trim(),\n  _form_meta_id: (form['Meta Account ID (opcjonalne)'] || '').trim()\n} }];"
+                "jsCode": "// ============================================================\n// PARSE FORM\n// ============================================================\nconst form = $input.first().json;\n\nconst brandName = (form['Brand Name'] || '').trim();\nif (!brandName) throw new Error('Brand Name is required.');\n\nconst sheetUrl = form['Data Sheet URL (Google Sheets)'] || '';\nconst sheetIdMatch = sheetUrl.match(/\\/d\\/([a-zA-Z0-9_-]+)/);\nconst sheetId = sheetIdMatch ? sheetIdMatch[1] : '';\nif (!sheetId) throw new Error('Invalid Google Sheet URL.');\n\nconst now = new Date();\nconst y1ago = new Date(now);\ny1ago.setFullYear(y1ago.getFullYear() - 1);\n\nreturn [{ json: {\n  _brand_name: brandName,\n  _brand_key: brandName.toLowerCase(),\n  _vat_rate: parseFloat(form['VAT Rate']) || 0.23,\n  _default_margin: parseFloat(form['Default Margin']) || 0.10,\n  _feed_url: (form['Feed URL (XML)'] || '').trim(),\n  _sheet_id: sheetId,\n  _date_from: (form['Date From (YYYY-MM-DD)'] || '').trim() || y1ago.toISOString().split('T')[0],\n  _date_to: (form['Date To (YYYY-MM-DD)'] || '').trim() || now.toISOString().split('T')[0],\n  _form_ga4_id: (form['GA4 Property ID (opcjonalne)'] || '').trim(),\n  _form_meta_id: (form['Meta Account ID (opcjonalne)'] || '').trim()\n} }];"
             },
             "id": "parse-form",
             "name": "Parse Form",
@@ -113,12 +113,11 @@
             "position": [
                 720,
                 500
-            ],
-            "notes": "Reads saved brand configs. If tab doesn't exist yet, returns empty (onError: continue)."
+            ]
         },
         {
             "parameters": {
-                "jsCode": "// ============================================================\n// BUILD CONFIG v8 — Merge: hardcoded + sheet history + form\n// Priority: Form override > Sheet history > Hardcoded lookup\n// ============================================================\n\nconst formData = $node['Parse Form'].json;\n\n// --- HARDCODED KNOWN BRANDS ---\nconst HARDCODED = {\n  'iiyama':      { ga4: '280127077',  meta: 'act_1438113836305522' },\n  'bushido':     { ga4: '297192186',  meta: 'act_1930400651212132' },\n  'koszulkowy':  { ga4: '270928705',  meta: 'act_1897121353740892' },\n  'mindlink':    { ga4: '477769901',  meta: 'act_1578563932814949' }\n};\n\n// --- SHEET HISTORY (from brand_config tab) ---\nconst sheetBrands = $input.all().map(i => i.json);\nconst sheetMatch = sheetBrands.find(row =>\n  (row.brand_name || '').toLowerCase().trim() === formData._brand_key\n);\n\n// --- RESOLUTION CASCADE: form > sheet > hardcoded > error ---\nconst hardcoded = HARDCODED[formData._brand_key];\nconst ga4Id = formData._form_ga4_id\n           || (sheetMatch ? (sheetMatch.ga4_property_id || '') : '')\n           || (hardcoded ? hardcoded.ga4 : '');\nconst metaId = formData._form_meta_id\n            || (sheetMatch ? (sheetMatch.meta_account_id || '') : '')\n            || (hardcoded ? hardcoded.meta : '');\n\nif (!ga4Id) throw new Error(`GA4 Property ID missing for brand \"${formData._brand_name}\". Fill the optional field.`);\nif (!metaId) throw new Error(`Meta Account ID missing for brand \"${formData._brand_name}\". Fill the optional field.`);\n\n// Is this a genuinely new brand (not in hardcoded AND not in sheet)?\nconst isNewBrand = !hardcoded && !sheetMatch;\n\nreturn [{ json: {\n  BRAND: formData._brand_name,\n  VAT_RATE: formData._vat_rate,\n  DEFAULT_MARGIN: formData._default_margin,\n  FEED_URL: formData._feed_url,\n  SHEET_ID: formData._sheet_id,\n  GA4_PROPERTY_ID: ga4Id,\n  META_ACCOUNT_ID: metaId,\n  DATE_FROM: formData._date_from,\n  DATE_TO: formData._date_to,\n  MSC_ALGO: { MIN_META_TRANS: 10, MIN_ORGANIC_SESSIONS: 300 },\n  _is_new_brand: isNewBrand,\n  _config_version: '8.0',\n  _generated_at: new Date().toISOString()\n} }];"
+                "jsCode": "// ============================================================\n// BUILD CONFIG + BRAND PERSISTENCE\n// ============================================================\n\nconst formData = $node['Parse Form'].json;\n\nconst HARDCODED = {\n  'iiyama':      { ga4: '280127077',  meta: 'act_1438113836305522' },\n  'bushido':     { ga4: '297192186',  meta: 'act_1930400651212132' },\n  'koszulkowy':  { ga4: '270928705',  meta: 'act_1897121353740892' },\n  'mindlink':    { ga4: '477769901',  meta: 'act_1578563932814949' }\n};\n\nconst sheetBrands = $input.all().map(i => i.json);\nconst sheetMatch = sheetBrands.find(row =>\n  (row.brand_name || '').toLowerCase().trim() === formData._brand_key\n);\n\nconst hardcoded = HARDCODED[formData._brand_key];\nconst ga4Id = formData._form_ga4_id\n           || (sheetMatch ? (sheetMatch.ga4_property_id || '') : '')\n           || (hardcoded ? hardcoded.ga4 : '');\nconst metaId = formData._form_meta_id\n            || (sheetMatch ? (sheetMatch.meta_account_id || '') : '')\n            || (hardcoded ? hardcoded.meta : '');\n\nif (!ga4Id) throw new Error(`GA4 Property ID missing for \"${formData._brand_name}\"`);\nif (!metaId) throw new Error(`Meta Account ID missing for \"${formData._brand_name}\"`);\n\nconst isNewBrand = !hardcoded && !sheetMatch;\n\nreturn [{ json: {\n  BRAND: formData._brand_name,\n  VAT_RATE: formData._vat_rate,\n  DEFAULT_MARGIN: formData._default_margin,\n  FEED_URL: formData._feed_url,\n  SHEET_ID: formData._sheet_id,\n  GA4_PROPERTY_ID: ga4Id,\n  META_ACCOUNT_ID: metaId,\n  DATE_FROM: formData._date_from,\n  DATE_TO: formData._date_to,\n  MSC_ALGO: { MIN_META_TRANS: 10, MIN_ORGANIC_SESSIONS: 300 },\n  _is_new_brand: isNewBrand\n} }];"
             },
             "id": "config-builder",
             "name": "Build Config",
@@ -127,8 +126,7 @@
             "position": [
                 960,
                 500
-            ],
-            "notes": "Resolution cascade: Form > Sheet history > Hardcoded. Sets _is_new_brand flag."
+            ]
         },
         {
             "parameters": {
@@ -158,7 +156,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// ============================================================\n// MARGIN RESOLVER v8 — GATE NODE\n// All downstream nodes branch from here.\n// ============================================================\n\nconst rules = $input.all().map(item => ({\n  match_type:  (item.json.match_type  || '').toUpperCase().trim(),\n  match_value: (item.json.match_value || '').trim(),\n  margin_rate: parseFloat(item.json.margin_rate) || 0,\n  note:        item.json.note || ''\n}));\n\nconst validTypes = ['SKU_EXACT', 'CATEGORY_EXACT', 'KEYWORD'];\nconst validRules = rules.filter(r => validTypes.includes(r.match_type) && r.margin_rate > 0);\nconst order = { 'SKU_EXACT': 1, 'CATEGORY_EXACT': 2, 'KEYWORD': 3 };\nvalidRules.sort((a, b) => (order[a.match_type] || 99) - (order[b.match_type] || 99));\n\nconst config = $node['Build Config'].json;\n\nreturn [{ json: {\n  ...config,\n  MARGIN_RULES: validRules,\n  MARGIN_RULES_COUNT: validRules.length,\n  _resolver_executed: true\n} }];"
+                "jsCode": "// ============================================================\n// MARGIN RESOLVER — GATE NODE\n// ============================================================\n\nconst rules = $input.all().map(item => ({\n  match_type:  (item.json.match_type  || '').toUpperCase().trim(),\n  match_value: (item.json.match_value || '').trim(),\n  margin_rate: parseFloat(item.json.margin_rate) || 0\n}));\n\nconst validTypes = ['SKU_EXACT', 'CATEGORY_EXACT', 'KEYWORD'];\nconst validRules = rules.filter(r => validTypes.includes(r.match_type) && r.margin_rate > 0);\n\nconst config = $node['Build Config'].json;\n\nreturn [{ json: {\n  ...config,\n  MARGIN_RULES: validRules,\n  MARGIN_RULES_COUNT: validRules.length,\n  _resolver_executed: true\n} }];"
             },
             "id": "margin-resolver",
             "name": "Margin Resolver",
@@ -167,8 +165,7 @@
             "position": [
                 1440,
                 500
-            ],
-            "notes": "GATE NODE. All downstream branches start here."
+            ]
         },
         {
             "parameters": {
@@ -202,7 +199,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// NORMALIZE FEED + RESOLVE MARGINS (4-Tier MECE)\nconst config = $node['Margin Resolver'].json;\nconst marginRules = config.MARGIN_RULES || [];\nconst defaultMargin = config.DEFAULT_MARGIN || 0.10;\n\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  return url.toLowerCase().replace(/^https?:\\/\\/(www\\.)?/, '').split('?')[0].replace(/\\/$/, '');\n}\n\nfunction resolveMargin(feedId, feedCategory) {\n  const id = (feedId || '').trim();\n  const cat = (feedCategory || '').toLowerCase().trim();\n  for (const rule of marginRules) {\n    const val = rule.match_value;\n    switch (rule.match_type) {\n      case 'SKU_EXACT':      if (id === val) return { rate: rule.margin_rate, rule: `SKU:${val}` }; break;\n      case 'CATEGORY_EXACT': if (cat === val.toLowerCase()) return { rate: rule.margin_rate, rule: `CAT:${val}` }; break;\n      case 'KEYWORD':        if (cat.includes(val.toLowerCase())) return { rate: rule.margin_rate, rule: `KW:${val}` }; break;\n    }\n  }\n  return { rate: defaultMargin, rule: 'DEFAULT' };\n}\n\nconst feedData = $input.first().json;\nlet products = [];\nif (feedData.rss?.channel?.item) {\n  products = Array.isArray(feedData.rss.channel.item) ? feedData.rss.channel.item : [feedData.rss.channel.item];\n} else if (feedData.products?.product) {\n  products = Array.isArray(feedData.products.product) ? feedData.products.product : [feedData.products.product];\n}\n\nreturn products.map(p => {\n  const id = p.g_id || p.id || '';\n  const cat = p.g_google_product_category || p.google_product_category || p.product_type || '';\n  const { rate, rule } = resolveMargin(id, cat);\n  return { json: {\n    feed_id: id,\n    feed_title: p.g_title || p.title || '',\n    feed_brand: p.g_brand || p.brand || '',\n    feed_category: cat,\n    feed_link: p.g_link || p.link || '',\n    norm_url: normalizeUrl(p.g_link || p.link),\n    feed_price_numeric: parseFloat((p.g_price || p.price || '0').toString().replace(/[^0-9.]/g, '')) || 0,\n    base_gross_margin: rate,\n    margin_matched_rule: rule,\n    _brand: config.BRAND,\n    _vat_rate: config.VAT_RATE\n  }};\n});"
+                "jsCode": "// NORMALIZE FEED + MARGINS\nconst config = $node['Margin Resolver'].json;\nconst marginRules = config.MARGIN_RULES || [];\nconst defaultMargin = config.DEFAULT_MARGIN || 0.10;\n\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  // Strip protocol, www, and query params\n  let u = url.toLowerCase().replace(/^https?:\\/\\/(www\\.)?/, '').split('?')[0].replace(/\\/$/, '');\n  return u;\n}\n\nfunction resolveMargin(feedId, feedCategory) {\n  const id = (feedId || '').trim();\n  const cat = (feedCategory || '').toLowerCase().trim();\n  for (const rule of marginRules) {\n    if (rule.match_type === 'SKU_EXACT' && id === rule.match_value) return rule.margin_rate;\n    if (rule.match_type === 'CATEGORY_EXACT' && cat === rule.match_value.toLowerCase()) return rule.margin_rate;\n    if (rule.match_type === 'KEYWORD' && cat.includes(rule.match_value.toLowerCase())) return rule.margin_rate;\n  }\n  return defaultMargin;\n}\n\nconst feedData = $input.first().json;\nlet products = [];\nif (feedData.rss?.channel?.item) products = [feedData.rss.channel.item].flat();\nelse if (feedData.products?.product) products = [feedData.products.product].flat();\n\nreturn products.map(p => {\n  const id = p.g_id || p.id || '';\n  const cat = p.g_google_product_category || p.google_product_category || p.product_type || '';\n  const link = p.g_link || p.link || '';\n  \n  return { json: {\n    feed_id: id,\n    feed_title: p.g_title || p.title || '',\n    feed_price: parseFloat((p.g_price || p.price || '0').replace(/[^0-9.]/g, '')) || 0,\n    feed_category: cat,\n    feed_link: link,\n    norm_url_path: normalizeUrl(link).split('/').slice(1).join('/'), // Path only for join\n    base_gross_margin: resolveMargin(id, cat)\n  }};\n});"
             },
             "id": "normalize-feed",
             "name": "Normalize Feed + Margins",
@@ -221,7 +218,7 @@
                 "nodeCredentialType": "googleServiceAccountApi",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'transactions' }], limit: 10000, keepEmptyRows: false }) }}",
+                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'transactions' }], limit: 10000 }) }}",
                 "options": {}
             },
             "id": "fetch-ga4-lp",
@@ -241,7 +238,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// NORMALIZE GA4 LP RESPONSE\nconst response = $input.first().json;\nconst rows = response.rows || [];\nreturn rows.map(row => {\n  const dims = row.dimensionValues || [];\n  const metrics = row.metricValues || [];\n  const lp = dims[0]?.value || '';\n  return { json: {\n    ga4_landing_page: lp,\n    ga4_norm_url: lp.toLowerCase().replace(/^\\//, '').split('?')[0].replace(/\\/$/, ''),\n    ga4lp_sessions: parseInt(metrics[0]?.value || '0'),\n    ga4lp_revenue: parseFloat(metrics[1]?.value || '0'),\n    ga4lp_transactions: parseInt(metrics[2]?.value || '0')\n  }};\n});"
+                "jsCode": "// NORMALIZE GA4 LP\nreturn $input.first().json.rows.map(row => {\n  const lp = row.dimensionValues[0].value || '';\n  return { json: {\n    ga4_lp_url: lp,\n    ga4_norm_path: lp.toLowerCase().replace(/^\\/|\\/$/g, '').split('?')[0], // Match feed path\n    ga4_sessions: parseInt(row.metricValues[0].value),\n    ga4_revenue: parseFloat(row.metricValues[1].value),\n    ga4_trans: parseInt(row.metricValues[2].value)\n  }};\n});"
             },
             "id": "normalize-ga4-lp",
             "name": "Normalize GA4 LP",
@@ -260,7 +257,7 @@
                 "nodeCredentialType": "googleServiceAccountApi",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'itemId' }], metrics: [{ name: 'itemsViewed' }, { name: 'itemRevenue' }, { name: 'itemsPurchased' }], limit: 10000, keepEmptyRows: false }) }}",
+                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'itemId' }], metrics: [{ name: 'itemsViewed' }, { name: 'itemRevenue' }, { name: 'itemsPurchased' }], limit: 10000 }) }}",
                 "options": {}
             },
             "id": "fetch-ga4-items",
@@ -280,7 +277,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// NORMALIZE GA4 ITEMS RESPONSE\nconst response = $input.first().json;\nconst rows = response.rows || [];\nreturn rows.map(row => {\n  const dims = row.dimensionValues || [];\n  const metrics = row.metricValues || [];\n  return { json: {\n    ga4_item_id: dims[0]?.value || '',\n    ga4item_views: parseInt(metrics[0]?.value || '0'),\n    ga4item_revenue: parseFloat(metrics[1]?.value || '0'),\n    ga4item_purchases: parseInt(metrics[2]?.value || '0')\n  }};\n});"
+                "jsCode": "// NORMALIZE GA4 ITEMS\nreturn $input.first().json.rows.map(row => {\n  return { json: {\n    ga4_item_id: row.dimensionValues[0].value,\n    ga4_item_views: parseInt(row.metricValues[0].value),\n    ga4_item_rev: parseFloat(row.metricValues[1].value),\n    ga4_item_purch: parseInt(row.metricValues[2].value)\n  }};\n});"
             },
             "id": "normalize-ga4-items",
             "name": "Normalize GA4 Items",
@@ -306,7 +303,7 @@
                         },
                         {
                             "name": "fields",
-                            "value": "ad_id,ad_name,spend,actions,action_values,impressions,clicks,cpc,cpm,reach"
+                            "value": "ad_id,ad_name,spend,actions,action_values,impressions,clicks"
                         },
                         {
                             "name": "time_range",
@@ -337,7 +334,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// NORMALIZE META ADS RESPONSE\nconst response = $input.first().json;\nconst data = response.data || [];\nfunction extractAction(actions, type) {\n  if (!Array.isArray(actions)) return 0;\n  const match = actions.find(a => a.action_type === type);\n  return match ? parseFloat(match.value) : 0;\n}\nreturn data.map(ad => {\n  const purchases = extractAction(ad.actions, 'offsite_conversion.fb_pixel_purchase') || extractAction(ad.actions, 'purchase');\n  const purchaseValue = extractAction(ad.action_values, 'offsite_conversion.fb_pixel_purchase') || extractAction(ad.action_values, 'purchase');\n  const spend = parseFloat(ad.spend || '0');\n  return { json: {\n    meta_ad_id: ad.ad_id || '',\n    meta_ad_name: ad.ad_name || '',\n    meta_spend: spend,\n    meta_purchases: purchases,\n    meta_purchase_value: purchaseValue,\n    meta_roas: spend > 0 ? purchaseValue / spend : 0,\n    meta_impressions: parseInt(ad.impressions || '0'),\n    meta_clicks: parseInt(ad.clicks || '0'),\n    meta_reach: parseInt(ad.reach || '0'),\n    meta_cpc: parseFloat(ad.cpc || '0'),\n    meta_cpm: parseFloat(ad.cpm || '0')\n  }};\n});"
+                "jsCode": "// NORMALIZE META ADS\nconst data = $input.first().json.data || [];\nreturn data.map(ad => {\n  const getVal = (list, type) => {\n    if (!list) return 0;\n    const m = list.find(x => x.action_type === type);\n    return m ? parseFloat(m.value) : 0;\n  };\n  const purch = getVal(ad.actions, 'offsite_conversion.fb_pixel_purchase') || getVal(ad.actions, 'purchase');\n  const val = getVal(ad.action_values, 'offsite_conversion.fb_pixel_purchase') || getVal(ad.action_values, 'purchase');\n  const spend = parseFloat(ad.spend || '0');\n  \n  return { json: {\n    meta_ad_id: ad.ad_id,\n    meta_ad_name: ad.ad_name,\n    meta_spend: spend,\n    meta_purch: purch,\n    meta_rev: val,\n    meta_roas: spend > 0 ? val / spend : 0\n  }};\n});"
             },
             "id": "normalize-meta-ads",
             "name": "Normalize Meta Ads",
@@ -350,7 +347,21 @@
         },
         {
             "parameters": {
-                "jsCode": "// ============================================================\n// SAVE BRAND CONFIG — fires only for new brands\n// Returns empty array (stops chain) if brand already known.\n// ============================================================\n\nconst config = $node['Margin Resolver'].json;\n\nif (!config._is_new_brand) {\n  // Known brand — nothing to save, stop this branch\n  return [];\n}\n\n// New brand: output a row for Google Sheets Append\nreturn [{ json: {\n  brand_name: config.BRAND,\n  ga4_property_id: config.GA4_PROPERTY_ID,\n  meta_account_id: config.META_ACCOUNT_ID,\n  vat_rate: config.VAT_RATE,\n  default_margin: config.DEFAULT_MARGIN,\n  feed_url: config.FEED_URL,\n  created_at: new Date().toISOString()\n} }];"
+                "jsCode": "// ============================================================\n// MERGER NODE — The Great Joiner\n// Joins Feed + GA4 Items + GA4 LP + Meta Ads\n// ============================================================\n\n// 1. Get all inputs by referencing upstream node names\nconst feed = $('Normalize Feed + Margins').all().map(i => i.json);\nlet ga4items = [];\ntry { ga4items = $('Normalize GA4 Items').all().map(i => i.json); } catch(e) {}\nlet ga4lp = [];\ntry { ga4lp = $('Normalize GA4 LP').all().map(i => i.json); } catch(e) {}\nlet meta = [];\ntry { meta = $('Normalize Meta Ads').all().map(i => i.json); } catch(e) {}\n\n// 2. Index lookups for speed\nconst ga4ItemsMap = new Map();\nga4items.forEach(i => ga4ItemsMap.set(i.ga4_item_id, i));\n\nconst ga4LpMap = new Map();\nga4lp.forEach(p => ga4LpMap.set(p.ga4_norm_path, p));\n\n// 3. Join Waterfall\nreturn feed.map(prod => {\n  // JOIN 1: Feed + GA4 Items (ID match)\n  const gItem = ga4ItemsMap.get(prod.feed_id) || {};\n  \n  // JOIN 2: + GA4 LP (Path match)\n  const gLp = ga4LpMap.get(prod.norm_url_path) || {};\n  \n  // JOIN 3: + Meta Ads (Ad Name fuzzy match)\n  const mAds = meta.filter(a => (a.meta_ad_name || '').includes(prod.feed_id));\n  const mAgg = {\n    meta_spend: mAds.reduce((s, a) => s + (a.meta_spend || 0), 0),\n    meta_purch: mAds.reduce((s, a) => s + (a.meta_purch || 0), 0),\n    meta_rev: mAds.reduce((s, a) => s + (a.meta_rev || 0), 0)\n  };\n  \n  // Consolidate\n  return { json: {\n    ...prod,\n    ga4_views: gItem.ga4_item_views || 0,\n    ga4_purchases: gItem.ga4_item_purch || 0,\n    ga4_revenue: gItem.ga4_item_rev || 0,\n    lp_sessions: gLp.ga4_sessions || 0,\n    lp_revenue: gLp.ga4_revenue || 0,\n    lp_trans: gLp.ga4_trans || 0,\n    meta_spend: mAgg.meta_spend,\n    meta_revenue: mAgg.meta_rev,\n    meta_roas: mAgg.meta_spend > 0 ? mAgg.meta_rev / mAgg.meta_spend : 0,\n    _has_ga4_item: !!gItem.ga4_item_id,\n    _has_ga4_lp: !!gLp.ga4_lp_url,\n    _has_meta: mAds.length > 0\n  }};\n});"
+            },
+            "id": "merger-node",
+            "name": "Merger Node",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                2400,
+                500
+            ],
+            "notes": "Joins 4 streams. Feed is the spine."
+        },
+        {
+            "parameters": {
+                "jsCode": "// SAVE NEW BRAND CONFIG\nconst config = $node['Margin Resolver'].json;\nif (!config._is_new_brand) return [];\nreturn [{ json: {\n  brand_name: config.BRAND,\n  ga4_property_id: config.GA4_PROPERTY_ID,\n  meta_account_id: config.META_ACCOUNT_ID,\n  vat_rate: config.VAT_RATE,\n  default_margin: config.DEFAULT_MARGIN,\n  feed_url: config.FEED_URL,\n  created_at: new Date().toISOString()\n} }];"
             },
             "id": "check-new-brand",
             "name": "Check New Brand",
@@ -359,8 +370,7 @@
             "position": [
                 1700,
                 1120
-            ],
-            "notes": "Returns data only for new brands. Empty return = stops chain."
+            ]
         },
         {
             "parameters": {
@@ -375,10 +385,6 @@
                     "mode": "name",
                     "value": "brand_config"
                 },
-                "columns": {
-                    "mappingMode": "autoMapInputData",
-                    "value": {}
-                },
                 "options": {}
             },
             "id": "save-brand-config",
@@ -388,8 +394,7 @@
             "position": [
                 1900,
                 1120
-            ],
-            "notes": "Appends new brand to brand_config tab. Only runs when Check New Brand outputs data."
+            ]
         }
     ],
     "connections": {
@@ -530,6 +535,50 @@
                         "node": "Normalize Meta Ads",
                         "type": "main",
                         "index": 0
+                    }
+                ]
+            ]
+        },
+        "Normalize Feed + Margins": {
+            "main": [
+                [
+                    {
+                        "node": "Merger Node",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Normalize GA4 Items": {
+            "main": [
+                [
+                    {
+                        "node": "Merger Node",
+                        "type": "main",
+                        "index": 1
+                    }
+                ]
+            ]
+        },
+        "Normalize GA4 LP": {
+            "main": [
+                [
+                    {
+                        "node": "Merger Node",
+                        "type": "main",
+                        "index": 2
+                    }
+                ]
+            ]
+        },
+        "Normalize Meta Ads": {
+            "main": [
+                [
+                    {
+                        "node": "Merger Node",
+                        "type": "main",
+                        "index": 3
                     }
                 ]
             ]
