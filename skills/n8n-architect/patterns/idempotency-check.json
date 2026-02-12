@@ -1,0 +1,34 @@
+{
+    "_comment": "PATTERN: Idempotency Check — Query for existing record before executing side-effect",
+    "nodes": [
+        {
+            "id": "idempotency-check",
+            "name": "Check If Already Processed",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                640,
+                300
+            ],
+            "parameters": {
+                "jsCode": "// Idempotency Guard Pattern\n// Replace with actual DB/Sheet lookup in production\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const record = item.json;\n  const uniqueKey = record.id || record.email || record.order_id;\n\n  // TODO: Replace with actual lookup\n  // const existing = await $helpers.httpRequest({\n  //   method: 'GET',\n  //   url: `https://api.example.com/records/${uniqueKey}`\n  // });\n  // if (existing.found) { continue; } // Skip duplicate\n\n  record._idempotency_key = uniqueKey;\n  record._checked_at = new Date().toISOString();\n  results.push({ json: record });\n}\n\nif (results.length === 0) {\n  // All items already processed — return empty to stop flow\n  return [];\n}\n\nreturn results;"
+            },
+            "notes": "IDEMPOTENCY: Skip records that were already processed"
+        },
+        {
+            "id": "mark-as-processed",
+            "name": "Mark As Processed",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1040,
+                300
+            ],
+            "parameters": {
+                "jsCode": "// After successful side-effect, mark record as processed\nconst items = $input.all();\n\nfor (const item of items) {\n  item.json._processed_at = new Date().toISOString();\n  // TODO: Write to DB/Sheet\n  // await $helpers.httpRequest({\n  //   method: 'POST',\n  //   url: 'https://api.example.com/records',\n  //   body: { key: item.json._idempotency_key, processed_at: item.json._processed_at }\n  // });\n}\n\nreturn items;"
+            },
+            "notes": "IDEMPOTENCY: Record that this item was processed"
+        }
+    ],
+    "connections": {}
+}

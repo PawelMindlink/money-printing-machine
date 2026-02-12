@@ -29,9 +29,21 @@ W repozytorium masz zestaw narzędzi do obsługi API:
 | `check_n8n_access.py` | Szybki test połączenia z API (wyświetla listę Twoich workflowów). |
 | `check_server_creds.py` | Debugging: sprawdza jakie credentials są podpięte pod węzły na serwerze. |
 
-## 4. Praca z Antigravity (AI)
+## 4. Praca z Antigravity (AI) i Skillami
 
-Ponieważ pracujesz z Antigravity, możesz wykorzystać ten setup do automatyzacji budowania:
+Do repozytorium dołączyłem folder `skills/`. Znajdziesz tam **n8n-architect** – zestaw wiedzy eksperckiej dla AI.
+
+### Jak z tego korzystać?
+
+Gdy prosisz Antigravity o pomoc, powiedz mu, żeby użyło tego skilla:
+
+> "Antigravity, użyj skilla @[skills/n8n-architect/SKILL.md] i stwórz mi workflow do pobierania danych z API."
+
+Folder ten zawiera:
+
+- Wzorce projektowe (np. `patterns/error-handling.json`)
+- Struktury JSON węzłów
+- Dobre praktyki (np. jak robić pętle, merge danych)
 
 ### Scenariusz: Tworzenie nowego workflow od zera
 
@@ -39,13 +51,8 @@ Ponieważ pracujesz z Antigravity, możesz wykorzystać ten setup do automatyzac
 2. Skopiuj ID i wklej je do `live_sync.py` jako `WORKFLOW_ID`.
 3. Uruchom `python live_sync.py`.
 4. Powiedz do Antigravity:
-   > "Antigravity, stwórz dla mnie w pliku JSON podstawową strukturę workflow n8n, który pobiera dane z Webhooka i zapisuje je do Google Sheets."
-5. AI wygeneruje kod w pliku, a skrypt `live_sync.py` od razu wyśle go do n8n.
-
-### Protip dla AI
-
-Jeśli Antigravity nie wie jak zbudować dany węzeł, skieruj je na pliki w folderze `Workflows/` jako przykłady:
-> "Użyj @[Workflows/MSC_ALGO_v4_Pipeline.json] jako wzoru dla połączeń między węzłami."
+   > "Antigravity, bazując na skillu @[n8n-architect], stwórz w pliku JSON workflow, który..."
+5. AI wygeneruje kod zgodny z najlepszymi praktykami z folderu `skills/`.
 
 ## 5. Security Checklist
 

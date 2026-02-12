@@ -1,0 +1,98 @@
+{
+    "_comment": "PATTERN: Webhook Processing — Webhook → Validate → Process → Respond",
+    "nodes": [
+        {
+            "id": "webhook-entry",
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                240,
+                300
+            ],
+            "parameters": {
+                "path": "my-endpoint",
+                "httpMethod": "POST",
+                "responseMode": "lastNode",
+                "options": {}
+            },
+            "notes": "Incoming webhook — data is under $json.body"
+        },
+        {
+            "id": "validate-input",
+            "name": "Validate Input",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                440,
+                300
+            ],
+            "parameters": {
+                "jsCode": "// Validate webhook payload\nconst body = $input.first().json.body;\n\nif (!body || !body.id) {\n  throw new Error('Missing required field: id');\n}\n\n// Pass validated data forward\nreturn [{ json: body }];"
+            },
+            "notes": "Validate and extract payload from $json.body"
+        },
+        {
+            "id": "process-data",
+            "name": "Process Data",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                640,
+                300
+            ],
+            "parameters": {
+                "jsCode": "// Business logic here\nconst data = $input.first().json;\n\n// Process...\ndata.processed_at = new Date().toISOString();\ndata.status = 'processed';\n\nreturn [{ json: data }];"
+            }
+        },
+        {
+            "id": "respond-webhook",
+            "name": "Respond to Webhook",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                840,
+                300
+            ],
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ { success: true, id: $json.id, status: $json.status } }}"
+            }
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Validate Input",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate Input": {
+            "main": [
+                [
+                    {
+                        "node": "Process Data",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Process Data": {
+            "main": [
+                [
+                    {
+                        "node": "Respond to Webhook",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

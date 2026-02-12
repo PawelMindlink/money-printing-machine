@@ -1,0 +1,45 @@
+{
+    "_comment": "PATTERN: Error Handling — paste these nodes into any workflow's nodes[] array and add the connection entry",
+    "nodes": [
+        {
+            "id": "error-trigger",
+            "name": "Error Trigger",
+            "type": "n8n-nodes-base.errorTrigger",
+            "typeVersion": 1,
+            "position": [
+                240,
+                800
+            ],
+            "notes": "Catches any workflow execution error"
+        },
+        {
+            "id": "error-notify-slack",
+            "name": "Notify Error (Slack)",
+            "type": "n8n-nodes-base.slack",
+            "typeVersion": 2.2,
+            "position": [
+                440,
+                800
+            ],
+            "parameters": {
+                "channel": "={{ $env.SLACK_ERROR_CHANNEL || '#n8n-errors' }}",
+                "text": "🚨 *Workflow Error*\n*Workflow:* {{ $json.workflow.name }}\n*Node:* {{ $json.execution.error.node.name }}\n*Error:* {{ $json.execution.error.message }}\n*Time:* {{ $now.toISO() }}",
+                "otherOptions": {}
+            },
+            "notes": "Send error details to Slack channel"
+        }
+    ],
+    "connections": {
+        "Error Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Notify Error (Slack)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}
