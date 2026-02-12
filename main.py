@@ -8,8 +8,10 @@ import os
 import json
 import traceback
 
-# Add src/ to path so we can import checks
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add project root AND src/ to path so complete_pipeline.py's internal imports work
+_root = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _root)
+sys.path.insert(0, os.path.join(_root, 'src'))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
