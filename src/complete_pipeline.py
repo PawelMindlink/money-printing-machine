@@ -134,7 +134,7 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
         df['calc_entity_type'] = 'PRODUCT'
     if 'meta_spend' in df.columns:
         df.loc[df['calc_entity_type'].isna(), 'calc_entity_type'] = 'PRODUCT'
-        mask_syn = (df['feed_id'].isna()) & (df.get('meta_spend', pd.Series([0])) > 0)
+        mask_syn = (df['feed_id'].isna()) & (df['meta_spend'] > 0)
         df.loc[mask_syn, 'calc_entity_type'] = 'CATEGORY_OR_AD'
 
     df['is_product'] = df['calc_entity_type'] == 'PRODUCT'
@@ -163,10 +163,14 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
             axis=1
         )
 
-    # Margins
-    df['base_gross_margin'] = df.apply(lambda row: bl.calculate_gross_margin(
-        row, default_margin, category_overrides, min_margin=min_margin, is_product=row.get('is_product', True)
-    ), axis=1)
+    # Margins — use n8n pre-computed if available, otherwise calculate
+    if params.get('use_n8n_margin') and 'base_gross_margin' in df.columns:
+        # n8n already computed margins via Margin Resolver, just fill NaN
+        df['base_gross_margin'] = pd.to_numeric(df['base_gross_margin'], errors='coerce').fillna(default_margin)
+    else:
+        df['base_gross_margin'] = df.apply(lambda row: bl.calculate_gross_margin(
+            row, default_margin, category_overrides, min_margin=min_margin, is_product=row.get('is_product', True)
+        ), axis=1)
 
     # Prices
     if 'feed_price_str' in df.columns:
