@@ -1,0 +1,702 @@
+{
+    "name": "MSC_ALGO_v5_Hybrid",
+    "nodes": [
+        {
+            "parameters": {
+                "formTitle": "MSC-ALGO Pipeline",
+                "formDescription": "Wpisz dane klienta. Znane brandy (Iiyama, Bushido, Koszulkowy, Mindlink) maja auto-resolve GA4/Meta ID.",
+                "formFields": {
+                    "values": [
+                        {
+                            "fieldLabel": "Brand Name",
+                            "fieldType": "text",
+                            "requiredField": true,
+                            "placeholder": "np. Iiyama, Bushido, Koszulkowy, Mindlink"
+                        },
+                        {
+                            "fieldLabel": "VAT Rate",
+                            "fieldType": "number",
+                            "requiredField": true,
+                            "placeholder": "0.23"
+                        },
+                        {
+                            "fieldLabel": "Default Margin",
+                            "fieldType": "number",
+                            "requiredField": true,
+                            "placeholder": "0.10"
+                        },
+                        {
+                            "fieldLabel": "Feed URL (XML)",
+                            "fieldType": "text",
+                            "requiredField": true,
+                            "placeholder": "https://example.com/feed.xml"
+                        },
+                        {
+                            "fieldLabel": "Data Sheet URL (Google Sheets)",
+                            "fieldType": "text",
+                            "requiredField": true,
+                            "placeholder": "https://docs.google.com/spreadsheets/d/..."
+                        },
+                        {
+                            "fieldLabel": "Date From (YYYY-MM-DD)",
+                            "fieldType": "text",
+                            "requiredField": false,
+                            "placeholder": "puste = 12 miesiecy wstecz"
+                        },
+                        {
+                            "fieldLabel": "Date To (YYYY-MM-DD)",
+                            "fieldType": "text",
+                            "requiredField": false,
+                            "placeholder": "puste = dzisiaj"
+                        },
+                        {
+                            "fieldLabel": "GA4 Property ID (opcjonalne)",
+                            "fieldType": "text",
+                            "requiredField": false,
+                            "placeholder": "np. 280127077"
+                        },
+                        {
+                            "fieldLabel": "Meta Account ID (opcjonalne)",
+                            "fieldType": "text",
+                            "requiredField": false,
+                            "placeholder": "np. act_1438113836305522"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "form-trigger",
+            "name": "Pipeline Form",
+            "type": "n8n-nodes-base.formTrigger",
+            "typeVersion": 2.2,
+            "position": [
+                240,
+                500
+            ],
+            "webhookId": "msc-algo-form"
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================================\n// PARSE FORM\n// ============================================================\nconst form = $input.first().json;\n\nconst brandName = (form['Brand Name'] || '').trim();\nif (!brandName) throw new Error('Brand Name is required.');\n\nconst sheetUrl = form['Data Sheet URL (Google Sheets)'] || '';\nconst sheetIdMatch = sheetUrl.match(/\\/d\\/([a-zA-Z0-9_-]+)/);\nconst sheetId = sheetIdMatch ? sheetIdMatch[1] : '';\nif (!sheetId) throw new Error('Invalid Google Sheet URL.');\n\nconst now = new Date();\nconst y1ago = new Date(now);\ny1ago.setFullYear(y1ago.getFullYear() - 1);\n\nreturn [{ json: {\n  _brand_name: brandName,\n  _brand_key: brandName.toLowerCase(),\n  _vat_rate: parseFloat(form['VAT Rate']) || 0.23,\n  _default_margin: parseFloat(form['Default Margin']) || 0.10,\n  _feed_url: (form['Feed URL (XML)'] || '').trim(),\n  _sheet_id: sheetId,\n  _date_from: (form['Date From (YYYY-MM-DD)'] || '').trim() || y1ago.toISOString().split('T')[0],\n  _date_to: (form['Date To (YYYY-MM-DD)'] || '').trim() || now.toISOString().split('T')[0],\n  _form_ga4_id: (form['GA4 Property ID (opcjonalne)'] || '').trim(),\n  _form_meta_id: (form['Meta Account ID (opcjonalne)'] || '').trim()\n} }];"
+            },
+            "id": "parse-form",
+            "name": "Parse Form",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                480,
+                500
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "read",
+                "documentId": {
+                    "__rl": true,
+                    "mode": "id",
+                    "value": "={{ $json._sheet_id }}"
+                },
+                "sheetName": {
+                    "__rl": true,
+                    "mode": "name",
+                    "value": "brand_config"
+                },
+                "options": {
+                    "headerRow": 1
+                },
+                "onError": "continueRegularOutput"
+            },
+            "id": "read-brand-config",
+            "name": "Read Brand History",
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4.5,
+            "position": [
+                720,
+                500
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================================\n// BUILD CONFIG + BRAND PERSISTENCE\n// ============================================================\n\nconst formData = $node['Parse Form'].json;\n\nconst HARDCODED = {\n  'iiyama':      { ga4: '280127077',  meta: 'act_1438113836305522' },\n  'bushido':     { ga4: '297192186',  meta: 'act_1930400651212132' },\n  'koszulkowy':  { ga4: '270928705',  meta: 'act_1897121353740892' },\n  'mindlink':    { ga4: '477769901',  meta: 'act_1578563932814949' }\n};\n\nconst sheetBrands = $input.all().map(i => i.json);\nconst sheetMatch = sheetBrands.find(row =>\n  (row.brand_name || '').toLowerCase().trim() === formData._brand_key\n);\n\nconst hardcoded = HARDCODED[formData._brand_key];\nconst ga4Id = formData._form_ga4_id\n           || (sheetMatch ? (sheetMatch.ga4_property_id || '') : '')\n           || (hardcoded ? hardcoded.ga4 : '');\nconst metaId = formData._form_meta_id\n            || (sheetMatch ? (sheetMatch.meta_account_id || '') : '')\n            || (hardcoded ? hardcoded.meta : '');\n\nif (!ga4Id) throw new Error(`GA4 Property ID missing for \"${formData._brand_name}\"`);\nif (!metaId) throw new Error(`Meta Account ID missing for \"${formData._brand_name}\"`);\n\nconst isNewBrand = !hardcoded && !sheetMatch;\n\nreturn [{ json: {\n  BRAND: formData._brand_name,\n  VAT_RATE: formData._vat_rate,\n  DEFAULT_MARGIN: formData._default_margin,\n  FEED_URL: formData._feed_url,\n  SHEET_ID: formData._sheet_id,\n  GA4_PROPERTY_ID: ga4Id,\n  META_ACCOUNT_ID: metaId,\n  DATE_FROM: formData._date_from,\n  DATE_TO: formData._date_to,\n  MSC_ALGO: { MIN_META_TRANS: 10, MIN_ORGANIC_SESSIONS: 300 },\n  _is_new_brand: isNewBrand\n} }];"
+            },
+            "id": "config-builder",
+            "name": "Build Config",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                960,
+                500
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "read",
+                "documentId": {
+                    "__rl": true,
+                    "mode": "id",
+                    "value": "={{ $json.SHEET_ID }}"
+                },
+                "sheetName": {
+                    "__rl": true,
+                    "mode": "name",
+                    "value": "margin_rules"
+                },
+                "options": {
+                    "headerRow": 1
+                }
+            },
+            "id": "read-margin-rules",
+            "name": "Read Margin Rules",
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4.5,
+            "position": [
+                1200,
+                500
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================================\n// MARGIN RESOLVER — GATE NODE\n// ============================================================\n\nconst rules = $input.all().map(item => ({\n  match_type:  (item.json.match_type  || '').toUpperCase().trim(),\n  match_value: (item.json.match_value || '').trim(),\n  margin_rate: parseFloat(item.json.margin_rate) || 0\n}));\n\nconst validTypes = ['SKU_EXACT', 'CATEGORY_EXACT', 'KEYWORD'];\nconst validRules = rules.filter(r => validTypes.includes(r.match_type) && r.margin_rate > 0);\n\nconst config = $node['Build Config'].json;\n\nreturn [{ json: {\n  ...config,\n  MARGIN_RULES: validRules,\n  MARGIN_RULES_COUNT: validRules.length,\n  _resolver_executed: true\n} }];"
+            },
+            "id": "margin-resolver",
+            "name": "Margin Resolver",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1440,
+                500
+            ]
+        },
+        {
+            "parameters": {
+                "url": "={{ $json.FEED_URL }}",
+                "options": {}
+            },
+            "id": "fetch-feed",
+            "name": "Fetch Product Feed",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1700,
+                240
+            ]
+        },
+        {
+            "parameters": {
+                "options": {
+                    "explicitArray": false,
+                    "ignoreAttrs": true
+                }
+            },
+            "id": "xml-parser",
+            "name": "XML Parser",
+            "type": "n8n-nodes-base.xml",
+            "typeVersion": 1,
+            "position": [
+                1900,
+                240
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// NORMALIZE FEED + MARGINS\n// FIX: g: namespace fields use bracket notation (p['g:id'] not p.g_id)\nconst config = $node['Margin Resolver'].json;\nconst marginRules = config.MARGIN_RULES || [];\nconst defaultMargin = config.DEFAULT_MARGIN || 0.10;\n\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  let u = url.toLowerCase().replace(/^https?:\\/\\/(www\\.)?/, '').split('?')[0].replace(/\\/$/, '');\n  return u;\n}\n\nfunction resolveMargin(feedId, feedCategory) {\n  const id = (feedId || '').trim();\n  const cat = (feedCategory || '').toLowerCase().trim();\n  for (const rule of marginRules) {\n    if (rule.match_type === 'SKU_EXACT' && id === rule.match_value) return rule.margin_rate;\n    if (rule.match_type === 'CATEGORY_EXACT' && cat === rule.match_value.toLowerCase()) return rule.margin_rate;\n    if (rule.match_type === 'KEYWORD' && cat.includes(rule.match_value.toLowerCase())) return rule.margin_rate;\n  }\n  return defaultMargin;\n}\n\nconst feedData = $input.first().json;\nlet products = [];\nif (feedData.rss?.channel?.item) products = [feedData.rss.channel.item].flat();\nelse if (feedData.feed?.entry) products = [feedData.feed.entry].flat();\nelse if (feedData.products?.product) products = [feedData.products.product].flat();\n\nreturn products.map(p => {\n  // XML g: namespace produces keys like 'g:id', 'g:title', etc.\n  const id = p['g:id'] || p.g_id || p.id || '';\n  const cat = p['g:product_type'] || p['g:google_product_category'] || p.product_type || p.google_product_category || '';\n  const link = p['g:link'] || p.g_link || p.link || '';\n  const priceRaw = p['g:price'] || p.g_price || p.price || '0';\n  const title = p['g:title'] || p.g_title || p.title || '';\n  const brand = p['g:brand'] || p.g_brand || p.brand || '';\n  \n  return { json: {\n    feed_id: id,\n    feed_title: title,\n    feed_brand: brand,\n    feed_price: parseFloat(String(priceRaw).replace(/[^0-9.]/g, '')) || 0,\n    feed_category: cat,\n    feed_link: link,\n    norm_url_path: normalizeUrl(link).split('/').slice(1).join('/'),\n    base_gross_margin: resolveMargin(id, cat)\n  }};\n});"
+            },
+            "id": "normalize-feed",
+            "name": "Normalize Feed + Margins",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                2100,
+                240
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ 'https://analyticsdata.googleapis.com/v1beta/properties/' + $node['Margin Resolver'].json.GA4_PROPERTY_ID + ':runReport' }}",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "googleServiceAccountApi",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'transactions' }], limit: 10000 }) }}",
+                "options": {}
+            },
+            "id": "fetch-ga4-lp",
+            "name": "Fetch GA4 Landing Page",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1700,
+                460
+            ],
+            "credentials": {
+                "googleApi": {
+                    "id": "HDkQgqGFjUakc4Ct",
+                    "name": "Google Service Account account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "// NORMALIZE GA4 LP\nreturn $input.first().json.rows.map(row => {\n  const lp = row.dimensionValues[0].value || '';\n  return { json: {\n    ga4_lp_url: lp,\n    ga4_norm_path: lp.toLowerCase().replace(/^\\/|\\/$/g, '').split('?')[0], // Match feed path\n    ga4_sessions: parseInt(row.metricValues[0].value),\n    ga4_revenue: parseFloat(row.metricValues[1].value),\n    ga4_trans: parseInt(row.metricValues[2].value)\n  }};\n});"
+            },
+            "id": "normalize-ga4-lp",
+            "name": "Normalize GA4 LP",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1900,
+                460
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ 'https://analyticsdata.googleapis.com/v1beta/properties/' + $node['Margin Resolver'].json.GA4_PROPERTY_ID + ':runReport' }}",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "googleServiceAccountApi",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'itemId' }], metrics: [{ name: 'itemsViewed' }, { name: 'itemRevenue' }, { name: 'itemsPurchased' }], limit: 10000 }) }}",
+                "options": {}
+            },
+            "id": "fetch-ga4-items",
+            "name": "Fetch GA4 Items",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1700,
+                680
+            ],
+            "credentials": {
+                "googleApi": {
+                    "id": "HDkQgqGFjUakc4Ct",
+                    "name": "Google Service Account account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "// NORMALIZE GA4 ITEMS\nreturn $input.first().json.rows.map(row => {\n  return { json: {\n    ga4_item_id: row.dimensionValues[0].value,\n    ga4_item_views: parseInt(row.metricValues[0].value),\n    ga4_item_rev: parseFloat(row.metricValues[1].value),\n    ga4_item_purch: parseInt(row.metricValues[2].value)\n  }};\n});"
+            },
+            "id": "normalize-ga4-items",
+            "name": "Normalize GA4 Items",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1900,
+                680
+            ]
+        },
+        {
+            "parameters": {
+                "method": "GET",
+                "url": "={{ 'https://graph.facebook.com/v21.0/' + $node['Margin Resolver'].json.META_ACCOUNT_ID + '/insights' }}",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpHeaderAuth",
+                "sendQuery": true,
+                "queryParameters": {
+                    "parameters": [
+                        {
+                            "name": "level",
+                            "value": "ad"
+                        },
+                        {
+                            "name": "fields",
+                            "value": "ad_id,ad_name,spend,actions,action_values,impressions,clicks"
+                        },
+                        {
+                            "name": "time_range",
+                            "value": "={{ '{\"since\":\"' + $node['Margin Resolver'].json.DATE_FROM + '\",\"until\":\"' + $node['Margin Resolver'].json.DATE_TO + '\"}' }}"
+                        },
+                        {
+                            "name": "limit",
+                            "value": "500"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "fetch-meta-ads",
+            "name": "Fetch Meta Ads",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1700,
+                900
+            ],
+            "credentials": {
+                "httpBearerAuth": {
+                    "id": "RAbkfjgnH4OLFDrm",
+                    "name": "Bearer Auth account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "// NORMALIZE META ADS\nconst data = $input.first().json.data || [];\nreturn data.map(ad => {\n  const getVal = (list, type) => {\n    if (!list) return 0;\n    const m = list.find(x => x.action_type === type);\n    return m ? parseFloat(m.value) : 0;\n  };\n  const purch = getVal(ad.actions, 'offsite_conversion.fb_pixel_purchase') || getVal(ad.actions, 'purchase');\n  const val = getVal(ad.action_values, 'offsite_conversion.fb_pixel_purchase') || getVal(ad.action_values, 'purchase');\n  const spend = parseFloat(ad.spend || '0');\n  \n  return { json: {\n    meta_ad_id: ad.ad_id,\n    meta_ad_name: ad.ad_name,\n    meta_spend: spend,\n    meta_purch: purch,\n    meta_rev: val,\n    meta_roas: spend > 0 ? val / spend : 0\n  }};\n});"
+            },
+            "id": "normalize-meta-ads",
+            "name": "Normalize Meta Ads",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1900,
+                900
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================================\n// PYTHON BRIDGE — Consolidate all data for external Python API\n// ============================================================\n\nconst safeGet = (nodeName) => {\n  try { return $(nodeName).all().map(i => i.json); }\n  catch (e) { return []; }\n};\n\nconst feed = safeGet('Normalize Feed + Margins');\nconst meta = safeGet('Normalize Meta Ads');\nconst items = safeGet('Normalize GA4 Items');\nconst lp = safeGet('Normalize GA4 LP');\n\nlet config = {};\ntry { config = $('Margin Resolver').first().json; } catch(e) {}\n\n// Return consolidated payload as single item\nreturn [{ json: {\n  feed: feed,\n  meta_ads: meta,\n  ga4_items: items,\n  ga4_lp: lp,\n  config: {\n    brand: config.BRAND || '',\n    vat_rate: config.VAT_RATE || 0.23,\n    default_margin: config.DEFAULT_MARGIN || 0.10,\n    margin_rules: config.MARGIN_RULES || []\n  }\n} }];"
+            },
+            "id": "merger-node",
+            "name": "Python Bridge",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                2400,
+                500
+            ],
+            "notes": "Consolidates all 4 streams + config for Python API."
+        },
+        {
+            "parameters": {
+                "jsCode": "// SAVE NEW BRAND CONFIG\nconst config = $node['Margin Resolver'].json;\nif (!config._is_new_brand) return [];\nreturn [{ json: {\n  brand_name: config.BRAND,\n  ga4_property_id: config.GA4_PROPERTY_ID,\n  meta_account_id: config.META_ACCOUNT_ID,\n  vat_rate: config.VAT_RATE,\n  default_margin: config.DEFAULT_MARGIN,\n  feed_url: config.FEED_URL,\n  created_at: new Date().toISOString()\n} }];"
+            },
+            "id": "check-new-brand",
+            "name": "Check New Brand",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1700,
+                1120
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "append",
+                "documentId": {
+                    "__rl": true,
+                    "mode": "id",
+                    "value": "={{ $node['Margin Resolver'].json.SHEET_ID }}"
+                },
+                "sheetName": {
+                    "__rl": true,
+                    "mode": "name",
+                    "value": "brand_config"
+                },
+                "options": {}
+            },
+            "id": "save-brand-config",
+            "name": "Save Brand Config",
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4.5,
+            "position": [
+                1900,
+                1120
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $getWorkflowStaticData('global').api_url || 'https://msc-algo-api.onrender.com' }}/process",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify($json) }}",
+                "options": {
+                    "timeout": 120000
+                }
+            },
+            "id": "msc-classifier",
+            "name": "Python Brain (API)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                2700,
+                500
+            ],
+            "notes": "Calls external Python API. 120s timeout for cold starts on free tier."
+        },
+        {
+            "parameters": {
+                "operation": "append",
+                "documentId": {
+                    "__rl": true,
+                    "mode": "id",
+                    "value": "={{ $node['Margin Resolver'].json.SHEET_ID }}"
+                },
+                "sheetName": {
+                    "__rl": true,
+                    "mode": "name",
+                    "value": "msc_algo_output"
+                },
+                "columns": {
+                    "mappingMode": "autoMapInputData"
+                },
+                "options": {}
+            },
+            "id": "output-sheets",
+            "name": "Output to Google Sheets",
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4.5,
+            "position": [
+                3200,
+                500
+            ],
+            "credentials": {
+                "googleSheetsOAuth2Api": {
+                    "id": "4rQw16Pw2ajSyr33",
+                    "name": "Google Sheets account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================================\n// PARSE API RESPONSE\n// Ensures Python API response is properly formatted for Sheets\n// ============================================================\nconst items = $input.all().map(i => i.json);\n\n// Handle case where response is nested in 'data' or similar\nif (items.length === 1 && Array.isArray(items[0])) {\n  return items[0].map(item => ({ json: item }));\n}\n\n// Already properly formatted\nreturn items.map(item => ({ json: item }));"
+            },
+            "id": "7e7c63d0-5cdb-4b84-aa6d-4c4342b5fd71",
+            "name": "Parse API Response",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                2950,
+                500
+            ],
+            "notes": "Safety wrapper for API response formatting."
+        }
+    ],
+    "connections": {
+        "Pipeline Form": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Form",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Form": {
+            "main": [
+                [
+                    {
+                        "node": "Read Brand History",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Read Brand History": {
+            "main": [
+                [
+                    {
+                        "node": "Build Config",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Config": {
+            "main": [
+                [
+                    {
+                        "node": "Read Margin Rules",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Read Margin Rules": {
+            "main": [
+                [
+                    {
+                        "node": "Margin Resolver",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Margin Resolver": {
+            "main": [
+                [
+                    {
+                        "node": "Fetch Product Feed",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Fetch GA4 Landing Page",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Fetch GA4 Items",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Fetch Meta Ads",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Check New Brand",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch Product Feed": {
+            "main": [
+                [
+                    {
+                        "node": "XML Parser",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "XML Parser": {
+            "main": [
+                [
+                    {
+                        "node": "Normalize Feed + Margins",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch GA4 Landing Page": {
+            "main": [
+                [
+                    {
+                        "node": "Normalize GA4 LP",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch GA4 Items": {
+            "main": [
+                [
+                    {
+                        "node": "Normalize GA4 Items",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch Meta Ads": {
+            "main": [
+                [
+                    {
+                        "node": "Normalize Meta Ads",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Normalize Feed + Margins": {
+            "main": [
+                [
+                    {
+                        "node": "Python Bridge",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Normalize GA4 Items": {
+            "main": [
+                [
+                    {
+                        "node": "Python Bridge",
+                        "type": "main",
+                        "index": 1
+                    }
+                ]
+            ]
+        },
+        "Normalize GA4 LP": {
+            "main": [
+                [
+                    {
+                        "node": "Python Bridge",
+                        "type": "main",
+                        "index": 2
+                    }
+                ]
+            ]
+        },
+        "Normalize Meta Ads": {
+            "main": [
+                [
+                    {
+                        "node": "Python Bridge",
+                        "type": "main",
+                        "index": 3
+                    }
+                ]
+            ]
+        },
+        "Check New Brand": {
+            "main": [
+                [
+                    {
+                        "node": "Save Brand Config",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Python Bridge": {
+            "main": [
+                [
+                    {
+                        "node": "Python Brain (API)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Python Brain (API)": {
+            "main": [
+                [
+                    {
+                        "node": "Parse API Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse API Response": {
+            "main": [
+                [
+                    {
+                        "node": "Output to Google Sheets",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    }
+}
