@@ -118,11 +118,9 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
             for col in aggs.keys():
                 df[col] = df[col].fillna(0)
     
-    # Ensure all expected metric columns exist with 0 defaults
+    # Ensure meta/item/feed columns exist (BEFORE LP merge to avoid _x/_y suffix collisions)
     df = _ensure_cols(df, [
         'meta_spend', 'meta_revenue', 'meta_purchases',
-        'ga4lp_sessions', 'ga4lp_users', 'ga4lp_purchases', 'ga4lp_revenue',
-        'ga4lp_first_time_purchasers',
         'ga4item_views', 'ga4item_revenue', 'ga4item_purchases',
         'feed_price_str', 'feed_category', 'feed_title', 'feed_link'
     ], default=0)
@@ -148,6 +146,12 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
             df.loc[mask, 'path_key'] = df.loc[mask, 'norm_url'].apply(bl.extract_path)
     if not lp_agg.empty and 'path_key' in df.columns:
         df = pd.merge(df, lp_agg, on='path_key', how='left')
+
+    # NOW ensure ga4lp columns exist (AFTER LP merge — safe from _x/_y collisions)
+    df = _ensure_cols(df, [
+        'ga4lp_sessions', 'ga4lp_users', 'ga4lp_purchases', 'ga4lp_revenue',
+        'ga4lp_first_time_purchasers',
+    ], default=0)
 
     # --- Financials ---
     # Ensure numeric columns
