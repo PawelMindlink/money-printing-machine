@@ -17,6 +17,21 @@ def get_p75(series):
     return max(1.0, s.quantile(0.75))
 
 
+def _col(df, name, default=0):
+    """Safe column access: always returns a Series, never a scalar."""
+    if name in df.columns:
+        return df[name]
+    return pd.Series(default, index=df.index)
+
+
+def _ensure_cols(df, cols, default=0):
+    """Ensure columns exist in df with default value."""
+    for c in cols:
+        if c not in df.columns:
+            df[c] = default
+    return df
+
+
 # ============================================================================
 # API FUNCTIONS (Used by FastAPI main.py — accept pre-loaded DataFrames)
 # ============================================================================
@@ -103,6 +118,18 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
             for col in aggs.keys():
                 df[col] = df[col].fillna(0)
     
+    # Ensure all expected metric columns exist with 0 defaults
+    df = _ensure_cols(df, [
+        'meta_spend', 'meta_revenue', 'meta_purchases',
+        'ga4lp_sessions', 'ga4lp_users', 'ga4lp_purchases', 'ga4lp_revenue',
+        'ga4lp_first_time_purchasers',
+        'ga4item_views', 'ga4item_revenue', 'ga4item_purchases',
+        'feed_price_str', 'feed_category', 'feed_title', 'feed_link'
+    ], default=0)
+    # String columns need empty string default
+    for sc in ['feed_price_str', 'feed_category', 'feed_title', 'feed_link']:
+        df[sc] = df[sc].fillna('')
+
     if 'calc_entity_type' not in df.columns:
         df['calc_entity_type'] = 'PRODUCT'
     if 'meta_spend' in df.columns:
@@ -150,10 +177,10 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
     else:
         df['feed_price_numeric'] = 0
 
-    df['meta_aov'] = df.get('meta_revenue', 0) / df.get('meta_purchases', pd.Series([1])).replace(0, 1)
-    df.loc[df.get('meta_purchases', pd.Series([0])) == 0, 'meta_aov'] = 0
-    df['ga4_aov'] = df.get('ga4lp_revenue', 0) / df.get('ga4lp_purchases', pd.Series([1])).replace(0, 1)
-    df.loc[df.get('ga4lp_purchases', pd.Series([0])) == 0, 'ga4_aov'] = 0
+    df['meta_aov'] = df['meta_revenue'] / df['meta_purchases'].replace(0, 1)
+    df.loc[df['meta_purchases'] == 0, 'meta_aov'] = 0
+    df['ga4_aov'] = df['ga4lp_revenue'] / df['ga4lp_purchases'].replace(0, 1)
+    df.loc[df['ga4lp_purchases'] == 0, 'ga4_aov'] = 0
 
     df['calc_gross_price'] = df.apply(
         lambda row: bl.calculate_conservative_price(
@@ -193,32 +220,33 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
     if cluster_stats:
         stats_df = pd.DataFrame(cluster_stats)
         df = pd.merge(df, stats_df, on=['calc_price_cluster', 'base_gross_margin'], how='left')
-    df['bid_cap'] = df.get('bid_cap', pd.Series([0.0])).fillna(0.0)
-    df['cost_cap'] = df.get('cost_cap', pd.Series([0.0])).fillna(0.0)
+    df = _ensure_cols(df, ['bid_cap', 'cost_cap'], default=0.0)
+    df['bid_cap'] = df['bid_cap'].fillna(0.0)
+    df['cost_cap'] = df['cost_cap'].fillna(0.0)
 
     # Net revenue + Gross Profit
-    df['calc_net_revenue_meta'] = df.get('meta_revenue', 0) / (1 + vat)
-    df['calc_net_revenue_lp'] = df.get('ga4lp_revenue', 0) / (1 + vat)
-    df['calc_net_revenue_item'] = df.get('ga4item_revenue', 0) / (1 + vat)
+    df['calc_net_revenue_meta'] = df['meta_revenue'] / (1 + vat)
+    df['calc_net_revenue_lp'] = df['ga4lp_revenue'] / (1 + vat)
+    df['calc_net_revenue_item'] = df['ga4item_revenue'] / (1 + vat)
     df['calc_gross_profit_meta'] = df['calc_net_revenue_meta'] * df['base_gross_margin']
     df['calc_gross_profit_lp'] = df['calc_net_revenue_lp'] * df['base_gross_margin']
     df['calc_gross_profit_item'] = df['calc_net_revenue_item'] * df['base_gross_margin']
 
     # Efficiency
-    df['calc_contribution_profit'] = df['calc_gross_profit_meta'] - df.get('meta_spend', 0)
+    df['calc_contribution_profit'] = df['calc_gross_profit_meta'] - df['meta_spend']
     df['calc_gpps'] = df.apply(lambda r: bl.calculate_gpps(r.get('calc_gross_profit_lp', 0), r.get('ga4lp_sessions', 0)), axis=1)
     df['calc_cr'] = df.apply(lambda r: bl.calculate_cr(r.get('ga4lp_purchases', 0), r.get('ga4lp_sessions', 0)), axis=1)
     df['calc_frequency'] = df.apply(lambda r: bl.calculate_frequency(r.get('ga4lp_purchases', 0), r.get('ga4lp_first_time_purchasers', 0)), axis=1)
     df['calc_gppv'] = df.apply(lambda r: bl.calculate_gppv(r.get('calc_gross_profit_item', 0), r.get('ga4item_views', 0)), axis=1)
 
     # Thresholds (P75)
-    P75_VOL_META = get_p75(df.get('meta_revenue', pd.Series([0])))
-    P75_EFF_META = get_p75(df.get('calc_contribution_profit', pd.Series([0])))
-    P75_VOL_GA = get_p75(df.get('ga4lp_sessions', pd.Series([0])))
-    P75_EFF_GA = get_p75(df.get('calc_gpps', pd.Series([0])))
-    P75_VOL_ITEM = get_p75(df.get('ga4item_views', pd.Series([0])))
-    P75_EFF_ITEM = get_p75(df.get('calc_gppv', pd.Series([0])))
-    AVG_CR = (df['ga4lp_purchases'].sum() / df['ga4lp_sessions'].sum()) if df.get('ga4lp_sessions', pd.Series([0])).sum() > 0 else 0.01
+    P75_VOL_META = get_p75(df['meta_revenue'])
+    P75_EFF_META = get_p75(df['calc_contribution_profit'])
+    P75_VOL_GA = get_p75(df['ga4lp_sessions'])
+    P75_EFF_GA = get_p75(df['calc_gpps'])
+    P75_VOL_ITEM = get_p75(df['ga4item_views'])
+    P75_EFF_ITEM = get_p75(df['calc_gppv'])
+    AVG_CR = (df['ga4lp_purchases'].sum() / df['ga4lp_sessions'].sum()) if df['ga4lp_sessions'].sum() > 0 else 0.01
     MIN_META_TRANS = 10
     SIGNIFICANCE_FLOOR = 300
     MIN_ORGANIC_SESSIONS = max(SIGNIFICANCE_FLOOR, min(2000, 100 / (AVG_CR if AVG_CR > 0 else 0.01)))
@@ -301,23 +329,26 @@ def run_pipeline_logic(df, params):
                   4: "UX_PRICE_AUDIT", 5: "BROAD_AD_TARGETING", 6: "CONVERSION_CAMPAIGN",
                   7: "CATALOG_ADS_DPA", 8: "IGNORE"}
     df['calc_action_type'] = df['calc_priority'].map(action_map).fillna("IGNORE")
-    df['calc_net_price'] = df.get('calc_gross_price', 0) / (1 + vat)
-    df['calc_bid_cap'] = df.get('bid_cap', 0)
-    df['calc_cost_cap'] = df.get('cost_cap', 0)
+    df = _ensure_cols(df, ['calc_gross_price', 'bid_cap', 'cost_cap', 'meta_revenue', 'meta_spend',
+                            'ga4lp_revenue', 'ga4lp_sessions', 'ga4lp_purchases', 'ga4lp_users',
+                            'ga4item_views', 'ga4item_revenue', 'calc_contribution_profit', 'calc_gpps'])
+    df['calc_net_price'] = df['calc_gross_price'] / (1 + vat)
+    df['calc_bid_cap'] = df['bid_cap']
+    df['calc_cost_cap'] = df['cost_cap']
     df['critical_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_critical_roas(vat, x))
     df['scaling_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_scaling_roas(vat, x))
     df['calc_break_even_roas'] = df['critical_roas']
-    df['calc_roas'] = df.get('meta_revenue', 0) / df.get('meta_spend', pd.Series([1])).replace(0, 1)
+    df['calc_roas'] = df['meta_revenue'] / df['meta_spend'].replace(0, 1)
     df['meta_class'] = df.apply(lambda r: bl.classify_meta_ads(r.get('calc_contribution_profit', 0), r.get('meta_spend', 0)), axis=1)
     ga4_thresholds = {
         'min_activity': MIN_ORGANIC_SESSIONS,
-        'trans_75': get_p75(df.get('ga4lp_purchases', pd.Series([0]))),
-        'arpu_75': get_p75(df.get('calc_gpps', pd.Series([0])))
+        'trans_75': get_p75(df['ga4lp_purchases']),
+        'arpu_75': get_p75(df['calc_gpps'])
     }
     df['ga4_class'] = df.apply(lambda r: bl.classify_ga4_product(
         r.get('ga4lp_sessions', 0), r.get('ga4lp_purchases', 0), r.get('calc_gpps', 0), ga4_thresholds
     ), axis=1)
-    df['arpu'] = df.get('ga4lp_revenue', 0) / df.get('ga4lp_users', df.get('ga4lp_sessions', pd.Series([1]))).replace(0, 1)
+    df['arpu'] = df['ga4lp_revenue'] / _col(df, 'ga4lp_users', df['ga4lp_sessions']).replace(0, 1)
     df['arpiv'] = df.apply(lambda r: bl.calculate_arpiv(r.get('ga4item_revenue', 0), r.get('ga4item_views', 0)), axis=1)
     df.sort_values(by=['calc_priority', 'calc_contribution_profit'], ascending=[True, False], inplace=True)
 
