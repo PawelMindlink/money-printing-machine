@@ -1,8 +1,11 @@
-import requests, json, sys
+import requests, json, sys, os
+from dotenv import load_dotenv
+
+load_dotenv()
 sys.stdout.reconfigure(encoding='utf-8')
 
-N8N = "https://mindlink-n8n.ironcode.io"
-KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzMTZkM2RkMi05OGY5LTRmMTYtOGIzYi1kN2I0ZjkzOTMxY2EiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiNTE4Y2Y3YWUtZGJiNy00NWVkLTkwNjAtZDBlNDVkMjNmNGNmIiwiaWF0IjoxNzcwODE4Njk1fQ.URFaTCPUZ2JnUwifCefk8wQmkXkWj--EfXK9oMpuhmU"
+N8N = os.getenv("N8N_URL", "https://mindlink-n8n.ironcode.io").rstrip("/")
+KEY = os.getenv("N8N_API_KEY")
 H = {"X-N8N-API-KEY": KEY}
 
 r = requests.get(f"{N8N}/api/v1/workflows/ApRz23ENs3s5HMOl", headers=H)

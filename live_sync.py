@@ -3,12 +3,21 @@ import requests
 import json
 import os
 import sys
+from dotenv import load_dotenv
+
+load_dotenv()
 
 sys.stdout.reconfigure(encoding='utf-8')
 
 # --- KONFIGURACJA ---
-N8N_URL = "https://mindlink-n8n.ironcode.io"
-API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzMTZkM2RkMi05OGY5LTRmMTYtOGIzYi1kN2I0ZjkzOTMxY2EiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiNTE4Y2Y3YWUtZGJiNy00NWVkLTkwNjAtZDBlNDVkMjNmNGNmIiwiaWF0IjoxNzcwODE4Njk1fQ.URFaTCPUZ2JnUwifCefk8wQmkXkWj--EfXK9oMpuhmU"
+# Zaladowanie z zmiennych srodowiskowych (np. z pliku .env w VS Code lub systemu)
+N8N_URL = os.getenv("N8N_URL", "https://mindlink-n8n.ironcode.io").rstrip("/")
+API_KEY = os.getenv("N8N_API_KEY")
+
+if not API_KEY:
+    print("ERROR: N8N_API_KEY not found in environment variables!")
+    print("Please set it in your .env file or system environment.")
+    sys.exit(1)
 
 # Workflow do synchronizacji
 WORKFLOW_ID = "ApRz23ENs3s5HMOl"  # MSC_ALGO_v4_Pipeline

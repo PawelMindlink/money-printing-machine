@@ -1,12 +1,16 @@
 import requests
 import json
 import sys
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Force UTF-8 for output
 sys.stdout.reconfigure(encoding='utf-8')
 
-N8N_URL = "https://mindlink-n8n.ironcode.io"
-API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzMTZkM2RkMi05OGY5LTRmMTYtOGIzYi1kN2I0ZjkzOTMxY2EiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiNTE4Y2Y3YWUtZGJiNy00NWVkLTkwNjAtZDBlNDVkMjNmNGNmIiwiaWF0IjoxNzcwODE4Njk1fQ.URFaTCPUZ2JnUwifCefk8wQmkXkWj--EfXK9oMpuhmU"
+N8N_URL = os.getenv("N8N_URL", "https://mindlink-n8n.ironcode.io").rstrip("/")
+API_KEY = os.getenv("N8N_API_KEY")
 
 HEADERS = {
     "X-N8N-API-KEY": API_KEY,
