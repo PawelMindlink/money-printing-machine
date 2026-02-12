@@ -1,6 +1,6 @@
 """
-MSC-ALGO FastAPI Microservice
-Wraps n8n_adapter.py logic as a REST API.
+MSC-ALGO FastAPI Microservice (Root)
+Wraps src/complete_pipeline.py logic as a REST API.
 POST /process → accepts JSON payload → returns classified items.
 """
 import sys
@@ -8,46 +8,33 @@ import os
 import json
 import traceback
 
-# Add src/ to path so we can import pipeline modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# Add src/ to path so we can import checks
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 import pandas as pd
 
-from complete_pipeline import run_pipeline_logic, join_and_enrich_data
+# Import logic from src
+from src.complete_pipeline import run_pipeline_logic, join_and_enrich_data
 
 app = FastAPI(
     title="MSC-ALGO API",
     description="Python SSOT for MSC-ALGO Waterfall Classification",
-    version="1.0.0"
+    version="1.0.1"
 )
 
 
 @app.get("/health")
 def health():
     """Health check for monitoring."""
-    return {"status": "ok", "service": "msc-algo"}
+    return {"status": "ok", "service": "msc-algo-root"}
 
 
 @app.post("/process")
 def process(payload: dict):
     """
     Process n8n data through the Python pipeline.
-    
-    Expected payload:
-    {
-        "feed": [...],
-        "meta_ads": [...],
-        "ga4_items": [...],
-        "ga4_lp": [...],
-        "config": {
-            "brand": "...",
-            "vat_rate": 0.23,
-            "default_margin": 0.10,
-            "margin_rules": [...]
-        }
-    }
     """
     try:
         # Handle both direct object and list wrapper
@@ -100,4 +87,6 @@ def process(payload: dict):
             "error": str(e),
             "trace": traceback.format_exc()
         }
+        # Print stack trace to logs
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_response)
