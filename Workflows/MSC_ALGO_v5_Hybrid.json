@@ -466,54 +466,6 @@
                 500
             ],
             "notes": "Safety wrapper for API response formatting."
-        },
-        {
-            "parameters": {
-                "operation": "clear",
-                "documentId": {
-                    "__rl": true,
-                    "mode": "id",
-                    "value": "={{ $node['Margin Resolver'].json.SHEET_ID }}"
-                },
-                "sheetName": {
-                    "__rl": true,
-                    "mode": "name",
-                    "value": "msc_algo_output"
-                },
-                "options": {}
-            },
-            "id": "clear-output-sheet",
-            "name": "Clear Output Sheet",
-            "type": "n8n-nodes-base.googleSheets",
-            "typeVersion": 4.5,
-            "position": [
-                3050,
-                500
-            ],
-            "credentials": {
-                "googleSheetsOAuth2Api": {
-                    "id": "4rQw16Pw2ajSyr33",
-                    "name": "Google Sheets account"
-                }
-            },
-            "notes": "Clear msc_algo_output before writing new results.",
-            "retryOnFail": true,
-            "maxTries": 3,
-            "waitBetweenTries": 30000
-        },
-        {
-            "parameters": {
-                "amount": 15,
-                "unit": "seconds"
-            },
-            "id": "wait-before-clear",
-            "name": "Wait Before Clear",
-            "type": "n8n-nodes-base.wait",
-            "typeVersion": 1.1,
-            "position": [
-                2850,
-                500
-            ]
         }
     ],
     "connections": {
@@ -739,29 +691,7 @@
             "main": [
                 [
                     {
-                        "node": "Wait Before Clear",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Clear Output Sheet": {
-            "main": [
-                [
-                    {
                         "node": "Output to Google Sheets",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Wait Before Clear": {
-            "main": [
-                [
-                    {
-                        "node": "Clear Output Sheet",
                         "type": "main",
                         "index": 0
                     }
