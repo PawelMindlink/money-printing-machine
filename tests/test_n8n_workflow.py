@@ -56,11 +56,29 @@ class TestN8nWorkflowStructure(unittest.TestCase):
             self.assertIn(metric, body,
                           f"GA4 LP must request metric '{metric}'")
 
-    def test_ga4_lp_limit_at_least_100k(self):
+    def test_ga4_lp_limit_at_least_10k(self):
         node = self.nodes["Fetch GA4 Landing Page"]
         body = node["parameters"]["jsonBody"]
-        self.assertIn("100000", body,
-                       "GA4 LP limit must be at least 100,000")
+        self.assertIn("10000", body,
+                       "GA4 LP limit must be at least 10,000")
+
+    def test_ga4_lp_has_session_filter(self):
+        """GA4 LP must filter sessions >= 50 (MIN_ORGANIC_SESSIONS)."""
+        node = self.nodes["Fetch GA4 Landing Page"]
+        body = node["parameters"]["jsonBody"]
+        self.assertIn("metricFilter", body,
+                       "GA4 LP must have a metricFilter")
+        self.assertIn("GREATER_THAN_OR_EQUAL", body,
+                       "Filter must use GREATER_THAN_OR_EQUAL")
+        self.assertIn("50", body,
+                       "Filter threshold must be 50")
+
+    def test_ga4_lp_ordered_by_sessions(self):
+        """GA4 LP should order by sessions DESC for deterministic results."""
+        node = self.nodes["Fetch GA4 Landing Page"]
+        body = node["parameters"]["jsonBody"]
+        self.assertIn("orderBys", body,
+                       "GA4 LP should have orderBys")
 
     # ------------------------------------------------------------------
     # FIX 4: Normalize GA4 LP maps 5 metrics

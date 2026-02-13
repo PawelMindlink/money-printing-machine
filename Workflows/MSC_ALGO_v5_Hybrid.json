@@ -218,7 +218,7 @@
                 "nodeCredentialType": "googleServiceAccountApi",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'transactions' }, { name: 'totalUsers' }, { name: 'firstTimePurchasers' }], limit: 100000 }) }}",
+                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'transactions' }, { name: 'totalUsers' }, { name: 'firstTimePurchasers' }], metricFilter: { filter: { fieldName: 'sessions', numericFilter: { operation: 'GREATER_THAN_OR_EQUAL', value: { int64Value: '50' } } } }, orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: 10000 }) }}",
                 "options": {}
             },
             "id": "fetch-ga4-lp",
@@ -399,7 +399,7 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "={{ $getWorkflowStaticData('global').api_url || 'https://msc-algo-api.onrender.com' }}/process",
+                "url": "https://money-printing-machine.onrender.com/process",
                 "sendBody": true,
                 "specifyBody": "json",
                 "jsonBody": "={{ JSON.stringify($json) }}",
