@@ -1,0 +1,14 @@
+{
+  "authentication": "serviceAccount",
+  "documentId": {
+    "__rl": true,
+    "mode": "id",
+    "value": "={{ $json.SHEET_ID }}"
+  },
+  "sheetName": {
+    "__rl": true,
+    "mode": "name",
+    "value": "margin_rules"
+  },
+  "options": {}
+}

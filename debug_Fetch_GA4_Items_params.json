@@ -1,0 +1,10 @@
+{
+  "method": "POST",
+  "url": "={{ 'https://analyticsdata.googleapis.com/v1beta/properties/' + $node['Margin Resolver'].json.GA4_PROPERTY_ID + ':runReport' }}",
+  "authentication": "predefinedCredentialType",
+  "nodeCredentialType": "googleApi",
+  "sendBody": true,
+  "specifyBody": "json",
+  "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'itemId' }], metrics: [{ name: 'itemsViewed' }, { name: 'itemRevenue' }, { name: 'itemsPurchased' }], limit: 10000 }) }}",
+  "options": {}
+}

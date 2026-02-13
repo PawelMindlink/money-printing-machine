@@ -1,0 +1,17 @@
+{
+  "operation": "append",
+  "documentId": {
+    "__rl": true,
+    "mode": "id",
+    "value": "={{ $node['Margin Resolver'].json.SHEET_ID }}"
+  },
+  "sheetName": {
+    "__rl": true,
+    "mode": "name",
+    "value": "msc_algo_output"
+  },
+  "columns": {
+    "mappingMode": "autoMapInputData"
+  },
+  "options": {}
+}

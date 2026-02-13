@@ -1,0 +1,4 @@
+{
+  "url": "={{ $json.FEED_URL }}",
+  "options": {}
+}

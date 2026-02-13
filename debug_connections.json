@@ -1,0 +1,231 @@
+{
+  "Pipeline Form": {
+    "main": [
+      [
+        {
+          "node": "Parse Form",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Parse Form": {
+    "main": [
+      [
+        {
+          "node": "Read Brand History",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Read Brand History": {
+    "main": [
+      [
+        {
+          "node": "Build Config",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Build Config": {
+    "main": [
+      [
+        {
+          "node": "Read Margin Rules",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Read Margin Rules": {
+    "main": [
+      [
+        {
+          "node": "Margin Resolver",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Margin Resolver": {
+    "main": [
+      [
+        {
+          "node": "Fetch Product Feed",
+          "type": "main",
+          "index": 0
+        },
+        {
+          "node": "Fetch GA4 Landing Page",
+          "type": "main",
+          "index": 0
+        },
+        {
+          "node": "Fetch GA4 Items",
+          "type": "main",
+          "index": 0
+        },
+        {
+          "node": "Fetch Meta Ads",
+          "type": "main",
+          "index": 0
+        },
+        {
+          "node": "Check New Brand",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Fetch Product Feed": {
+    "main": [
+      [
+        {
+          "node": "XML Parser",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "XML Parser": {
+    "main": [
+      [
+        {
+          "node": "Normalize Feed + Margins",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Fetch GA4 Landing Page": {
+    "main": [
+      [
+        {
+          "node": "Normalize GA4 LP",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Fetch GA4 Items": {
+    "main": [
+      [
+        {
+          "node": "Normalize GA4 Items",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Fetch Meta Ads": {
+    "main": [
+      [
+        {
+          "node": "Normalize Meta Ads",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Normalize Feed + Margins": {
+    "main": [
+      [
+        {
+          "node": "Python Bridge",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Normalize GA4 Items": {
+    "main": [
+      [
+        {
+          "node": "Python Bridge",
+          "type": "main",
+          "index": 1
+        }
+      ]
+    ]
+  },
+  "Normalize GA4 LP": {
+    "main": [
+      [
+        {
+          "node": "Python Bridge",
+          "type": "main",
+          "index": 2
+        }
+      ]
+    ]
+  },
+  "Normalize Meta Ads": {
+    "main": [
+      [
+        {
+          "node": "Python Bridge",
+          "type": "main",
+          "index": 3
+        }
+      ]
+    ]
+  },
+  "Check New Brand": {
+    "main": [
+      [
+        {
+          "node": "Save Brand Config",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Python Bridge": {
+    "main": [
+      [
+        {
+          "node": "Python Brain (API)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Python Brain (API)": {
+    "main": [
+      [
+        {
+          "node": "Parse API Response",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  },
+  "Parse API Response": {
+    "main": [
+      [
+        {
+          "node": "Output to Google Sheets",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
+  }
+}

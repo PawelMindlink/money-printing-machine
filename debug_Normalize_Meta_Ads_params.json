@@ -1,0 +1,3 @@
+{
+  "jsCode": "// NORMALIZE META ADS\nconst data = $input.first().json.data || [];\nreturn data.map(ad => {\n  const getVal = (list, type) => {\n    if (!list) return 0;\n    const m = list.find(x => x.action_type === type);\n    return m ? parseFloat(m.value) : 0;\n  };\n  const purch = getVal(ad.actions, 'offsite_conversion.fb_pixel_purchase') || getVal(ad.actions, 'purchase');\n  const val = getVal(ad.action_values, 'offsite_conversion.fb_pixel_purchase') || getVal(ad.action_values, 'purchase');\n  const spend = parseFloat(ad.spend || '0');\n  \n  return { json: {\n    meta_ad_id: ad.ad_id,\n    meta_ad_name: ad.ad_name,\n    meta_spend: spend,\n    meta_purch: purch,\n    meta_rev: val,\n    meta_roas: spend > 0 ? val / spend : 0\n  }};\n});"
+}

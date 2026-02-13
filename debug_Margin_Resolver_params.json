@@ -1,0 +1,3 @@
+{
+  "jsCode": "// ============================================================\n// MARGIN RESOLVER — GATE NODE\n// ============================================================\n\nconst rules = $input.all().map(item => ({\n  match_type:  (item.json.match_type  || '').toUpperCase().trim(),\n  match_value: (item.json.match_value || '').trim(),\n  margin_rate: parseFloat(item.json.margin_rate) || 0\n}));\n\nconst validTypes = ['SKU_EXACT', 'CATEGORY_EXACT', 'KEYWORD'];\nconst validRules = rules.filter(r => validTypes.includes(r.match_type) && r.margin_rate > 0);\n\nconst config = $node['Build Config'].json;\n\nreturn [{ json: {\n  ...config,\n  MARGIN_RULES: validRules,\n  MARGIN_RULES_COUNT: validRules.length,\n  _resolver_executed: true\n} }];"
+}

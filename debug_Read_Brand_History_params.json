@@ -1,0 +1,14 @@
+{
+  "authentication": "serviceAccount",
+  "documentId": {
+    "__rl": true,
+    "mode": "id",
+    "value": "={{ $json._sheet_id }}"
+  },
+  "sheetName": {
+    "__rl": true,
+    "value": "brand_config",
+    "mode": "name"
+  },
+  "options": {}
+}

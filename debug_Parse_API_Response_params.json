@@ -1,0 +1,3 @@
+{
+  "jsCode": "// ============================================================\n// PARSE API RESPONSE\n// Ensures Python API response is properly formatted for Sheets\n// ============================================================\nconst items = $input.all().map(i => i.json);\n\n// Handle case where response is nested in 'data' or similar\nif (items.length === 1 && Array.isArray(items[0])) {\n  return items[0].map(item => ({ json: item }));\n}\n\n// Already properly formatted\nreturn items.map(item => ({ json: item }));"
+}

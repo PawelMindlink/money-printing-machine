@@ -49,14 +49,16 @@ LP_REMAP = {
     'ga4_sessions': 'Sessions',
     'ga4_revenue': 'Purchase revenue',
     'ga4_trans': 'Purchases',
+    'ga4_users': 'Users',
+    'ga4_first_time_purchasers': 'First time purchasers',
 }
 
 META_REMAP = {
     'meta_spend': 'Amount spent (PLN)',
     'meta_purch': 'Purchases',
     'meta_rev': 'Purchases conversion value',
-    'meta_url': 'Link (ad settings)',     # If n8n provides URL
-    'meta_ad_url': 'Link (ad settings)',  # Alternative name
+    'meta_url': 'Link (ad settings)',       # n8n Normalize Meta Ads → website_url
+    'meta_ad_url': 'Link (ad settings)',    # Alternative name (backward compat)
 }
 
 # Gold-standard output columns (42 cols)
@@ -162,7 +164,12 @@ def _filter_output(df):
 @app.get("/health")
 def health():
     """Health check for monitoring."""
-    return {"status": "ok", "service": "msc-algo-v2"}
+    return {
+        "status": "ok",
+        "service": "msc-algo-v2",
+        "version": "2.1.0",
+        "gold_standard_cols": len(GOLD_STANDARD_COLS),
+    }
 
 
 @app.post("/process")

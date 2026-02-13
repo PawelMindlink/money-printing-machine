@@ -1,0 +1,10 @@
+{
+  "method": "POST",
+  "url": "https://money-printing-machine.onrender.com/process",
+  "sendBody": true,
+  "specifyBody": "json",
+  "jsonBody": "={{ JSON.stringify($json) }}",
+  "options": {
+    "timeout": 120000
+  }
+}

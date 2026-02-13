@@ -1,0 +1,3 @@
+{
+  "jsCode": "// NORMALIZE GA4 ITEMS\nreturn $input.first().json.rows.map(row => {\n  return { json: {\n    ga4_item_id: row.dimensionValues[0].value,\n    ga4_item_views: parseInt(row.metricValues[0].value),\n    ga4_item_rev: parseFloat(row.metricValues[1].value),\n    ga4_item_purch: parseInt(row.metricValues[2].value)\n  }};\n});"
+}

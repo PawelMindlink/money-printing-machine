@@ -20,10 +20,10 @@ if not API_KEY:
     sys.exit(1)
 
 # Workflow do synchronizacji
-WORKFLOW_ID = "ApRz23ENs3s5HMOl"  # MSC_ALGO_v4_Pipeline
+WORKFLOW_ID = "WADs1VFZV4wjeaQR"  # MSC_ALGO_v5_Hybrid
 
 # Plik, ktory obserwujemy
-FILE_PATH = os.path.join("Workflows", "MSC_ALGO_v4_Pipeline.json")
+FILE_PATH = os.path.join("Workflows", "MSC_ALGO_v5_Hybrid.json")
 
 HEADERS = {
     "X-N8N-API-KEY": API_KEY,

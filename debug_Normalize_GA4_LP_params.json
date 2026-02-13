@@ -1,0 +1,3 @@
+{
+  "jsCode": "// NORMALIZE GA4 LP\nreturn $input.first().json.rows.map(row => {\n  const lp = row.dimensionValues[0].value || '';\n  return { json: {\n    ga4_lp_url: lp,\n    ga4_norm_path: lp.toLowerCase().replace(/^\\/|\\/$/g, '').split('?')[0], // Match feed path\n    ga4_sessions: parseInt(row.metricValues[0].value),\n    ga4_revenue: parseFloat(row.metricValues[1].value),\n    ga4_trans: parseInt(row.metricValues[2].value)\n  }};\n});"
+}

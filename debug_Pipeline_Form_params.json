@@ -1,0 +1,52 @@
+{
+  "formTitle": "MSC-ALGO Pipeline",
+  "formDescription": "Wpisz dane klienta. Znane brandy (Iiyama, Bushido, Koszulkowy, Mindlink) maja auto-resolve GA4/Meta ID.",
+  "formFields": {
+    "values": [
+      {
+        "fieldLabel": "Brand Name",
+        "placeholder": "np. Iiyama, Bushido, Koszulkowy, Mindlink",
+        "requiredField": true
+      },
+      {
+        "fieldLabel": "VAT Rate",
+        "fieldType": "number",
+        "placeholder": "0.23",
+        "requiredField": true
+      },
+      {
+        "fieldLabel": "Default Margin",
+        "fieldType": "number",
+        "placeholder": "0.10",
+        "requiredField": true
+      },
+      {
+        "fieldLabel": "Feed URL (XML)",
+        "placeholder": "https://example.com/feed.xml",
+        "requiredField": true
+      },
+      {
+        "fieldLabel": "Data Sheet URL (Google Sheets)",
+        "placeholder": "https://docs.google.com/spreadsheets/d/...",
+        "requiredField": true
+      },
+      {
+        "fieldLabel": "Date From (YYYY-MM-DD)",
+        "placeholder": "puste = 12 miesiecy wstecz"
+      },
+      {
+        "fieldLabel": "Date To (YYYY-MM-DD)",
+        "placeholder": "puste = dzisiaj"
+      },
+      {
+        "fieldLabel": "GA4 Property ID (opcjonalne)",
+        "placeholder": "np. 280127077"
+      },
+      {
+        "fieldLabel": "Meta Account ID (opcjonalne)",
+        "placeholder": "np. act_1438113836305522"
+      }
+    ]
+  },
+  "options": {}
+}

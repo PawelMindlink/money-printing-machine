@@ -10,14 +10,14 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 N8N_URL = os.getenv("N8N_URL", "https://mindlink-n8n.ironcode.io").rstrip("/")
 API_KEY = os.getenv("N8N_API_KEY")
-WORKFLOW_ID = "ApRz23ENs3s5HMOl"  # MSC_ALGO_v4_Pipeline
+WORKFLOW_ID = "WADs1VFZV4wjeaQR"  # MSC_ALGO_v5_Hybrid
 
 HEADERS = {
     "X-N8N-API-KEY": API_KEY,
     "Content-Type": "application/json"
 }
 
-with open("Workflows/MSC_ALGO_v4_Pipeline.json", "r", encoding="utf-8") as f:
+with open("Workflows/MSC_ALGO_v5_Hybrid.json", "r", encoding="utf-8") as f:
     local_data = json.load(f)
 
 payload = {

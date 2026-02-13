@@ -1,0 +1,27 @@
+{
+  "url": "={{ 'https://graph.facebook.com/v21.0/' + $node['Margin Resolver'].json.META_ACCOUNT_ID + '/insights' }}",
+  "authentication": "genericCredentialType",
+  "genericAuthType": "httpBearerAuth",
+  "sendQuery": true,
+  "queryParameters": {
+    "parameters": [
+      {
+        "name": "level",
+        "value": "ad"
+      },
+      {
+        "name": "fields",
+        "value": "ad_id,ad_name,spend,actions,action_values,impressions,clicks"
+      },
+      {
+        "name": "time_range",
+        "value": "={{ '{\"since\":\"' + $node['Margin Resolver'].json.DATE_FROM + '\",\"until\":\"' + $node['Margin Resolver'].json.DATE_TO + '\"}' }}"
+      },
+      {
+        "name": "limit",
+        "value": "500"
+      }
+    ]
+  },
+  "options": {}
+}

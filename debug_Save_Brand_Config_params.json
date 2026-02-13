@@ -1,0 +1,14 @@
+{
+  "operation": "append",
+  "documentId": {
+    "__rl": true,
+    "mode": "id",
+    "value": "={{ $node['Margin Resolver'].json.SHEET_ID }}"
+  },
+  "sheetName": {
+    "__rl": true,
+    "mode": "name",
+    "value": "brand_config"
+  },
+  "options": {}
+}

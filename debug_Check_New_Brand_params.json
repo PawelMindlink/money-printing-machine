@@ -1,0 +1,3 @@
+{
+  "jsCode": "// SAVE NEW BRAND CONFIG\nconst config = $node['Margin Resolver'].json;\nif (!config._is_new_brand) return [];\nreturn [{ json: {\n  brand_name: config.BRAND,\n  ga4_property_id: config.GA4_PROPERTY_ID,\n  meta_account_id: config.META_ACCOUNT_ID,\n  vat_rate: config.VAT_RATE,\n  default_margin: config.DEFAULT_MARGIN,\n  feed_url: config.FEED_URL,\n  created_at: new Date().toISOString()\n} }];"
+}
