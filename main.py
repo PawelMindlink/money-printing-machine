@@ -167,7 +167,7 @@ def health():
     return {
         "status": "ok",
         "service": "msc-algo-v2",
-        "version": "2.1.0",
+        "version": "2.2.0",
         "gold_standard_cols": len(GOLD_STANDARD_COLS),
     }
 
@@ -191,11 +191,27 @@ def process(payload: dict):
         ga4_items_data = data.get('ga4_items', [])
         ga4_lp_data = data.get('ga4_lp', [])
 
+        # Diagnostic: log raw input sizes BEFORE remapping
+        print(f"[API] RAW input: feed={len(feed_data)}, meta={len(meta_data)}, items={len(ga4_items_data)}, lp={len(ga4_lp_data)}")
+        if ga4_lp_data:
+            print(f"[API] LP sample keys: {list(ga4_lp_data[0].keys())}")
+            print(f"[API] LP sample[0]: ga4_lp_url={ga4_lp_data[0].get('ga4_lp_url', 'MISSING')[:80]}, sessions={ga4_lp_data[0].get('ga4_sessions', 'MISSING')}")
+        else:
+            print("[API] WARNING: ga4_lp is EMPTY - LP join will produce 0 sessions for all rows!")
+        if meta_data:
+            print(f"[API] Meta sample keys: {list(meta_data[0].keys())}")
+        else:
+            print("[API] WARNING: meta_ads is EMPTY - all rows will be 'No Ads'!")
+
         # Convert to DataFrames + apply remapping
         feed_df = _prepare_feed(pd.DataFrame(feed_data) if feed_data else pd.DataFrame())
         meta_df = _prepare_meta(pd.DataFrame(meta_data) if meta_data else pd.DataFrame())
         items_df = _prepare_items(pd.DataFrame(ga4_items_data) if ga4_items_data else pd.DataFrame())
         lp_df = _prepare_lp(pd.DataFrame(ga4_lp_data) if ga4_lp_data else pd.DataFrame())
+
+        # Diagnostic: log columns AFTER remapping
+        print(f"[API] After remap: lp_cols={list(lp_df.columns) if not lp_df.empty else 'EMPTY'}")
+        print(f"[API] After remap: meta_cols={list(meta_df.columns) if not meta_df.empty else 'EMPTY'}")
 
         # Config from n8n
         config_in = data.get('config', {})
