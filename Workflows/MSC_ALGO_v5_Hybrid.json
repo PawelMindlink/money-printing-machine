@@ -1,5 +1,11 @@
 {
+    "updatedAt": "2026-02-15T04:14:22.676Z",
+    "createdAt": "2026-02-12T12:19:18.036Z",
+    "id": "WADs1VFZV4wjeaQR",
     "name": "MSC_ALGO_v5_Hybrid",
+    "description": null,
+    "active": false,
+    "isArchived": false,
     "nodes": [
         {
             "parameters": {
@@ -9,56 +15,45 @@
                     "values": [
                         {
                             "fieldLabel": "Brand Name",
-                            "fieldType": "text",
-                            "requiredField": true,
-                            "placeholder": "np. Iiyama, Bushido, Koszulkowy, Mindlink"
+                            "placeholder": "np. Iiyama, Bushido, Koszulkowy, Mindlink",
+                            "requiredField": true
                         },
                         {
                             "fieldLabel": "VAT Rate",
                             "fieldType": "number",
-                            "requiredField": true,
-                            "placeholder": "0.23"
+                            "placeholder": "0.23",
+                            "requiredField": true
                         },
                         {
                             "fieldLabel": "Default Margin",
                             "fieldType": "number",
-                            "requiredField": true,
-                            "placeholder": "0.10"
+                            "placeholder": "0.10",
+                            "requiredField": true
                         },
                         {
                             "fieldLabel": "Feed URL (XML)",
-                            "fieldType": "text",
-                            "requiredField": true,
-                            "placeholder": "https://example.com/feed.xml"
+                            "placeholder": "https://example.com/feed.xml",
+                            "requiredField": true
                         },
                         {
                             "fieldLabel": "Data Sheet URL (Google Sheets)",
-                            "fieldType": "text",
-                            "requiredField": true,
-                            "placeholder": "https://docs.google.com/spreadsheets/d/..."
+                            "placeholder": "https://docs.google.com/spreadsheets/d/...",
+                            "requiredField": true
                         },
                         {
                             "fieldLabel": "Date From (YYYY-MM-DD)",
-                            "fieldType": "text",
-                            "requiredField": false,
                             "placeholder": "puste = 12 miesiecy wstecz"
                         },
                         {
                             "fieldLabel": "Date To (YYYY-MM-DD)",
-                            "fieldType": "text",
-                            "requiredField": false,
                             "placeholder": "puste = dzisiaj"
                         },
                         {
                             "fieldLabel": "GA4 Property ID (opcjonalne)",
-                            "fieldType": "text",
-                            "requiredField": false,
                             "placeholder": "np. 280127077"
                         },
                         {
                             "fieldLabel": "Meta Account ID (opcjonalne)",
-                            "fieldType": "text",
-                            "requiredField": false,
                             "placeholder": "np. act_1438113836305522"
                         }
                     ]
@@ -71,7 +66,7 @@
             "typeVersion": 2.2,
             "position": [
                 240,
-                500
+                512
             ],
             "webhookId": "msc-algo-form"
         },
@@ -85,12 +80,12 @@
             "typeVersion": 2,
             "position": [
                 480,
-                500
+                512
             ]
         },
         {
             "parameters": {
-                "operation": "read",
+                "authentication": "serviceAccount",
                 "documentId": {
                     "__rl": true,
                     "mode": "id",
@@ -101,10 +96,7 @@
                     "mode": "name",
                     "value": "brand_config"
                 },
-                "options": {
-                    "headerRow": 1
-                },
-                "onError": "continueRegularOutput"
+                "options": {}
             },
             "id": "read-brand-config",
             "name": "Read Brand History",
@@ -112,8 +104,14 @@
             "typeVersion": 4.5,
             "position": [
                 720,
-                500
-            ]
+                512
+            ],
+            "credentials": {
+                "googleApi": {
+                    "id": "HDkQgqGFjUakc4Ct",
+                    "name": "Google Service Account account"
+                }
+            }
         },
         {
             "parameters": {
@@ -125,12 +123,12 @@
             "typeVersion": 2,
             "position": [
                 960,
-                500
+                512
             ]
         },
         {
             "parameters": {
-                "operation": "read",
+                "authentication": "serviceAccount",
                 "documentId": {
                     "__rl": true,
                     "mode": "id",
@@ -141,9 +139,7 @@
                     "mode": "name",
                     "value": "margin_rules"
                 },
-                "options": {
-                    "headerRow": 1
-                }
+                "options": {}
             },
             "id": "read-margin-rules",
             "name": "Read Margin Rules",
@@ -151,8 +147,14 @@
             "typeVersion": 4.5,
             "position": [
                 1200,
-                500
-            ]
+                512
+            ],
+            "credentials": {
+                "googleApi": {
+                    "id": "HDkQgqGFjUakc4Ct",
+                    "name": "Google Service Account account"
+                }
+            }
         },
         {
             "parameters": {
@@ -164,7 +166,7 @@
             "typeVersion": 2,
             "position": [
                 1440,
-                500
+                512
             ]
         },
         {
@@ -177,7 +179,7 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                1700,
+                1712,
                 240
             ]
         },
@@ -193,7 +195,7 @@
             "type": "n8n-nodes-base.xml",
             "typeVersion": 1,
             "position": [
-                1900,
+                1904,
                 240
             ]
         },
@@ -206,7 +208,7 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                2100,
+                2112,
                 240
             ]
         },
@@ -215,7 +217,7 @@
                 "method": "POST",
                 "url": "={{ 'https://analyticsdata.googleapis.com/v1beta/properties/' + $node['Margin Resolver'].json.GA4_PROPERTY_ID + ':runReport' }}",
                 "authentication": "predefinedCredentialType",
-                "nodeCredentialType": "googleServiceAccountApi",
+                "nodeCredentialType": "googleApi",
                 "sendBody": true,
                 "specifyBody": "json",
                 "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'transactions' }, { name: 'totalUsers' }, { name: 'firstTimePurchasers' }], metricFilter: { filter: { fieldName: 'sessions', numericFilter: { operation: 'GREATER_THAN_OR_EQUAL', value: { int64Value: '50' } } } }, orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: 10000 }) }}",
@@ -226,8 +228,8 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                1700,
-                460
+                1712,
+                464
             ],
             "credentials": {
                 "googleApi": {
@@ -238,15 +240,15 @@
         },
         {
             "parameters": {
-                "jsCode": "// NORMALIZE GA4 LP\nreturn $input.first().json.rows.map(row => {\n  const lp = row.dimensionValues[0].value || '';\n  return { json: {\n    ga4_lp_url: lp,\n    ga4_norm_path: lp.toLowerCase().replace(/^\\/|\\/$/g, '').split('?')[0],\n    ga4_sessions: parseInt(row.metricValues[0].value),\n    ga4_revenue: parseFloat(row.metricValues[1].value),\n    ga4_trans: parseInt(row.metricValues[2].value),\n    ga4_users: parseInt(row.metricValues[3].value),\n    ga4_first_time_purchasers: parseInt(row.metricValues[4].value)\n  }};\n});"
+                "jsCode": "// NORMALIZE GA4 LP (null-safe)\nconst response = $input.first().json;\nconst rows = response.rows || [];\nif (rows.length === 0) {\n  console.log('WARNING: GA4 LP returned 0 rows — filter may be too strict or property ID wrong');\n  return [{ json: { ga4_lp_url: '', ga4_sessions: 0, ga4_revenue: 0, ga4_trans: 0, ga4_users: 0, ga4_first_time_purchasers: 0, _empty: true } }];\n}\nreturn rows.map(row => {\n  const lp = row.dimensionValues[0].value || '';\n  return { json: {\n    ga4_lp_url: lp,\n    ga4_norm_path: lp.toLowerCase().replace(/^\\/|\\/$/g, '').split('?')[0],\n    ga4_sessions: parseInt(row.metricValues[0].value),\n    ga4_revenue: parseFloat(row.metricValues[1].value),\n    ga4_trans: parseInt(row.metricValues[2].value),\n    ga4_users: parseInt(row.metricValues[3].value),\n    ga4_first_time_purchasers: parseInt(row.metricValues[4].value)\n  }};\n});"
             },
             "id": "normalize-ga4-lp",
             "name": "Normalize GA4 LP",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1900,
-                460
+                1904,
+                464
             ]
         },
         {
@@ -254,7 +256,7 @@
                 "method": "POST",
                 "url": "={{ 'https://analyticsdata.googleapis.com/v1beta/properties/' + $node['Margin Resolver'].json.GA4_PROPERTY_ID + ':runReport' }}",
                 "authentication": "predefinedCredentialType",
-                "nodeCredentialType": "googleServiceAccountApi",
+                "nodeCredentialType": "googleApi",
                 "sendBody": true,
                 "specifyBody": "json",
                 "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'itemId' }], metrics: [{ name: 'itemsViewed' }, { name: 'itemRevenue' }, { name: 'itemsPurchased' }], limit: 10000 }) }}",
@@ -265,8 +267,8 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                1700,
-                680
+                1712,
+                688
             ],
             "credentials": {
                 "googleApi": {
@@ -277,23 +279,22 @@
         },
         {
             "parameters": {
-                "jsCode": "// NORMALIZE GA4 ITEMS\nreturn $input.first().json.rows.map(row => {\n  return { json: {\n    ga4_item_id: row.dimensionValues[0].value,\n    ga4_item_views: parseInt(row.metricValues[0].value),\n    ga4_item_rev: parseFloat(row.metricValues[1].value),\n    ga4_item_purch: parseInt(row.metricValues[2].value)\n  }};\n});"
+                "jsCode": "// NORMALIZE GA4 ITEMS (null-safe)\nconst response = $input.first().json;\nconst rows = response.rows || [];\nif (rows.length === 0) {\n  console.log('WARNING: GA4 Items returned 0 rows');\n  return [{ json: { ga4_item_id: '', ga4_item_views: 0, ga4_item_rev: 0, ga4_item_purch: 0, _empty: true } }];\n}\nreturn rows.map(row => {\n  return { json: {\n    ga4_item_id: row.dimensionValues[0].value,\n    ga4_item_views: parseInt(row.metricValues[0].value),\n    ga4_item_rev: parseFloat(row.metricValues[1].value),\n    ga4_item_purch: parseInt(row.metricValues[2].value)\n  }};\n});"
             },
             "id": "normalize-ga4-items",
             "name": "Normalize GA4 Items",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1900,
-                680
+                1904,
+                688
             ]
         },
         {
             "parameters": {
-                "method": "GET",
                 "url": "={{ 'https://graph.facebook.com/v21.0/' + $node['Margin Resolver'].json.META_ACCOUNT_ID + '/insights' }}",
                 "authentication": "genericCredentialType",
-                "genericAuthType": "httpHeaderAuth",
+                "genericAuthType": "httpBearerAuth",
                 "sendQuery": true,
                 "queryParameters": {
                     "parameters": [
@@ -322,8 +323,8 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                1700,
-                900
+                1712,
+                912
             ],
             "credentials": {
                 "httpBearerAuth": {
@@ -341,8 +342,8 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1900,
-                900
+                1904,
+                912
             ]
         },
         {
@@ -355,7 +356,7 @@
             "typeVersion": 2,
             "position": [
                 2400,
-                500
+                512
             ],
             "notes": "Consolidates all 4 streams + config for Python API."
         },
@@ -368,7 +369,7 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1700,
+                1712,
                 1120
             ]
         },
@@ -392,9 +393,15 @@
             "type": "n8n-nodes-base.googleSheets",
             "typeVersion": 4.5,
             "position": [
-                1900,
+                1904,
                 1120
-            ]
+            ],
+            "credentials": {
+                "googleSheetsOAuth2Api": {
+                    "id": "4rQw16Pw2ajSyr33",
+                    "name": "Google Sheets account"
+                }
+            }
         },
         {
             "parameters": {
@@ -412,13 +419,14 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                2700,
-                500
+                2704,
+                512
             ],
             "notes": "Calls external Python API. 120s timeout for cold starts on free tier."
         },
         {
             "parameters": {
+                "authentication": "serviceAccount",
                 "operation": "append",
                 "documentId": {
                     "__rl": true,
@@ -431,7 +439,12 @@
                     "value": "msc_algo_output"
                 },
                 "columns": {
-                    "mappingMode": "autoMapInputData"
+                    "mappingMode": "autoMapInputData",
+                    "value": {},
+                    "matchingColumns": [],
+                    "schema": [],
+                    "attemptToConvertTypes": false,
+                    "convertFieldsToString": false
                 },
                 "options": {}
             },
@@ -440,18 +453,18 @@
             "type": "n8n-nodes-base.googleSheets",
             "typeVersion": 4.5,
             "position": [
-                3350,
-                500
+                3360,
+                512
             ],
-            "credentials": {
-                "googleSheetsOAuth2Api": {
-                    "id": "4rQw16Pw2ajSyr33",
-                    "name": "Google Sheets account"
-                }
-            },
             "retryOnFail": true,
             "maxTries": 3,
-            "waitBetweenTries": 30000
+            "waitBetweenTries": 5000,
+            "credentials": {
+                "googleApi": {
+                    "id": "HDkQgqGFjUakc4Ct",
+                    "name": "Google Service Account account"
+                }
+            }
         },
         {
             "parameters": {
@@ -462,8 +475,8 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                2950,
-                500
+                2960,
+                512
             ],
             "notes": "Safety wrapper for API response formatting."
         }
@@ -700,6 +713,95 @@
         }
     },
     "settings": {
-        "executionOrder": "v1"
-    }
+        "executionOrder": "v1",
+        "callerPolicy": "workflowsFromSameOwner",
+        "availableInMCP": false
+    },
+    "staticData": null,
+    "meta": {
+        "templateCredsSetupCompleted": true
+    },
+    "pinData": {
+        "Parse Form": [
+            {
+                "json": {
+                    "_brand_name": "Iiyama",
+                    "_brand_key": "iiyama",
+                    "_vat_rate": 0.23,
+                    "_default_margin": 0.1,
+                    "_feed_url": "https://iiyama-sklep.pl/modules/pricewars2/xml/alias/facebook353re3534sdfdfdef.xml",
+                    "_sheet_id": "1ZuHKXFznsvIsY_I5HcjTCmAEDPr4ptHUydKdTRTbfok",
+                    "_date_from": "2025-02-12",
+                    "_date_to": "2026-02-12",
+                    "_form_ga4_id": "",
+                    "_form_meta_id": ""
+                },
+                "pairedItem": {
+                    "item": 0
+                }
+            }
+        ]
+    },
+    "versionId": "8378b186-e15c-40ea-adc7-7613040d18c5",
+    "activeVersionId": null,
+    "versionCounter": 74,
+    "triggerCount": 0,
+    "shared": [
+        {
+            "updatedAt": "2026-02-12T12:19:18.054Z",
+            "createdAt": "2026-02-12T12:19:18.054Z",
+            "role": "workflow:owner",
+            "workflowId": "WADs1VFZV4wjeaQR",
+            "projectId": "HdWBpWyygCpr2hPz",
+            "project": {
+                "updatedAt": "2025-06-04T17:19:23.175Z",
+                "createdAt": "2025-06-04T17:12:06.615Z",
+                "id": "HdWBpWyygCpr2hPz",
+                "name": "Christopher Gibb <chris@ironcode.io>",
+                "type": "personal",
+                "icon": null,
+                "description": null,
+                "creatorId": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
+                "projectRelations": [
+                    {
+                        "updatedAt": "2025-06-04T17:12:06.615Z",
+                        "createdAt": "2025-06-04T17:12:06.615Z",
+                        "userId": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
+                        "projectId": "HdWBpWyygCpr2hPz",
+                        "user": {
+                            "updatedAt": "2026-02-14T05:13:30.000Z",
+                            "createdAt": "2025-06-04T17:12:05.084Z",
+                            "id": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
+                            "email": "chris@ironcode.io",
+                            "firstName": "Christopher",
+                            "lastName": "Gibb",
+                            "personalizationAnswers": {
+                                "companyType": "personal",
+                                "reportedSource": "friend",
+                                "version": "v4",
+                                "personalization_survey_submitted_at": "2025-06-04T17:19:38.362Z",
+                                "personalization_survey_n8n_version": "1.54.4"
+                            },
+                            "settings": {
+                                "userActivated": true,
+                                "firstSuccessfulWorkflowId": "o32leWbxq0RNU38m",
+                                "userActivatedAt": 1749182444106,
+                                "easyAIWorkflowOnboarded": true,
+                                "npsSurvey": {
+                                    "responded": true,
+                                    "lastShownAt": 1770823055620
+                                }
+                            },
+                            "disabled": false,
+                            "mfaEnabled": false,
+                            "lastActiveAt": "2026-02-14",
+                            "isPending": false
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "tags": [],
+    "activeVersion": null
 }

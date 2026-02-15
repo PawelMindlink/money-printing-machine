@@ -1,0 +1,87 @@
+﻿============================================================
+PART 1: NEW OUTPUT ANALYSIS
+============================================================
+Rows: 313
+Columns (43): ['feed_id', 'feed_title', 'feed_brand', 'feed_category', 'calc_gross_price', 'is_product', 'is_price_inferred', 'feed_link', 'norm_url', 'calc_priority', 'calc_segment', 'calc_reason', 'calc_is_actionable', 'calc_action_type', 'meta_class']...
+
+Segments: {
+  "PROVEN_STAR": 1,
+  "DIRECT_TO_PDP": 9,
+  "FEED_DPA": 17,
+  "IGNORE": 286
+}
+
+Priorities: {
+  "1": 1,
+  "6": 9,
+  "7": 17,
+  "8": 286
+}
+
+GA4 classes: {
+  "Slacker": 313
+}
+
+Meta classes: {
+  "Profitable": 1,
+  "No Ads": 312
+}
+
+Reasons: {
+  "High ad revenue + profit": 1,
+  "High PDP views + profit": 9,
+  "Profitable, low PDP visibility": 17,
+  "High views, no purchases": 69,
+  "Insufficient data": 217
+}
+
+Rows with ga4lp_sessions > 0: 0/313
+Rows with meta_spend > 0: 1/313
+Rows with meta_purchases > 0: 1/313
+
+--- Session distribution ---
+  {'0': 313, '1-49': 0, '50-299': 0, '300-999': 0, '1000+': 0}
+
+--- GA4 Item Views distribution ---
+  {'0': 2, '1-299': 44, '300-999': 75, '1000+': 192}
+
+--- Sample rows with sessions > 0 ---
+
+============================================================
+PART 2: GOLD STANDARD COMPARISON
+============================================================
+Gold std segments: {
+  "PROVEN_STAR": 2,
+  "PROVEN_COW": 4,
+  "NEW_STAR_LAUNCH": 2,
+  "FIX_LANDING_PAGE": 35,
+  "DIRECT_TO_PDP": 3,
+  "FEED_DPA": 26,
+  "IGNORE": 247
+}
+Gold std rows with sessions > 0: 317/319
+
+--- Segment comparison ---
+  Segment                     Gold    New   Diff
+  DIRECT_TO_PDP                  3      9     +6 <<<
+  FEED_DPA                      26     17     -9 <<<
+  FIX_LANDING_PAGE              35      0    -35 <<<
+  IGNORE                       247    286    +39 <<<
+  NEW_STAR_LAUNCH                2      0     -2
+  PROVEN_COW                     4      0     -4 <<<
+  PROVEN_STAR                    2      1     -1
+
+============================================================
+PART 3: DIRECT API TEST
+============================================================
+Sending: feed=4, lp=4
+  LP[0] url=/1159-monitory-biurowe-monitor-iiyama-prolite-xub2492hsu-b6-24-ips-led-100hz-04m...
+  LP[1] url=/1219-monitory-biurowe-monitor-iiyama-prolite-xub2493hs-b6a-24-ips-led-05ms-100h...
+  LP[2] url=/1115-monitory-dotykowe-biurkowe-monitor-dotykowy-iiyama-prolite-t2252msc-b2-22-...
+  LP[3] url=/1209-monitory-wielkoformatowe-monitor-digitalsignage-iiyama-prolite-lh5541uhs-b...
+
+API returned: 4 rows
+  ID=1159: sessions=500, segment=IGNORE, ga4_class=Star, priority=8
+  ID=1219: sessions=500, segment=IGNORE, ga4_class=Star, priority=8
+  ID=1115: sessions=500, segment=IGNORE, ga4_class=Star, priority=8
+  ID=1209: sessions=500, segment=IGNORE, ga4_class=Star, priority=8
