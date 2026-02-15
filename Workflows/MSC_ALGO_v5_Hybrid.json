@@ -1,5 +1,5 @@
 {
-    "updatedAt": "2026-02-15T04:14:22.676Z",
+    "updatedAt": "2026-02-15T04:57:58.575Z",
     "createdAt": "2026-02-12T12:19:18.036Z",
     "id": "WADs1VFZV4wjeaQR",
     "name": "MSC_ALGO_v5_Hybrid",
@@ -72,7 +72,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// ============================================================\n// PARSE FORM\n// ============================================================\nconst form = $input.first().json;\n\nconst brandName = (form['Brand Name'] || '').trim();\nif (!brandName) throw new Error('Brand Name is required.');\n\nconst sheetUrl = form['Data Sheet URL (Google Sheets)'] || '';\nconst sheetIdMatch = sheetUrl.match(/\\/d\\/([a-zA-Z0-9_-]+)/);\nconst sheetId = sheetIdMatch ? sheetIdMatch[1] : '';\nif (!sheetId) throw new Error('Invalid Google Sheet URL.');\n\nconst now = new Date();\nconst y1ago = new Date(now);\ny1ago.setFullYear(y1ago.getFullYear() - 1);\n\nreturn [{ json: {\n  _brand_name: brandName,\n  _brand_key: brandName.toLowerCase(),\n  _vat_rate: parseFloat(form['VAT Rate']) || 0.23,\n  _default_margin: parseFloat(form['Default Margin']) || 0.10,\n  _feed_url: (form['Feed URL (XML)'] || '').trim(),\n  _sheet_id: sheetId,\n  _date_from: (form['Date From (YYYY-MM-DD)'] || '').trim() || y1ago.toISOString().split('T')[0],\n  _date_to: (form['Date To (YYYY-MM-DD)'] || '').trim() || now.toISOString().split('T')[0],\n  _form_ga4_id: (form['GA4 Property ID (opcjonalne)'] || '').trim(),\n  _form_meta_id: (form['Meta Account ID (opcjonalne)'] || '').trim()\n} }];"
+                "jsCode": "// ============================================================\n// PARSE FORM\n// ============================================================\nconst form = $input.first().json;\n\nconst brandName = (form['Brand Name'] || '').trim();\nif (!brandName) throw new Error('Brand Name is required.');\n\nconst sheetUrl = form['Data Sheet URL (Google Sheets)'] || '';\nconst sheetIdMatch = sheetUrl.match(/\\/d\\/([a-zA-Z0-9_-]+)/);\nconst sheetId = sheetIdMatch ? sheetIdMatch[1] : '';\nif (!sheetId) throw new Error('Invalid Google Sheet URL.');\n\nconst now = new Date();\nconst y1ago = new Date(now);\ny1ago.setFullYear(y1ago.getFullYear() - 1);\n\nreturn [{ json: {\n  _brand_name: brandName,\n  _brand_key: brandName.toLowerCase(),\n  _vat_rate: parseFloat(form['VAT Rate']) || 0.23,\n  _default_margin: parseFloat(form['Default Margin']) || 0.10,\n  _feed_url: (form['Feed URL (XML)'] || '').trim(),\n  _sheet_id: sheetId,\n  _date_from: (form['Date From (YYYY-MM-DD)'] || '').trim() || '2024-01-01',\n  _date_to: (form['Date To (YYYY-MM-DD)'] || '').trim() || now.toISOString().split('T')[0],\n  _form_ga4_id: (form['GA4 Property ID (opcjonalne)'] || '').trim(),\n  _form_meta_id: (form['Meta Account ID (opcjonalne)'] || '').trim()\n} }];"
             },
             "id": "parse-form",
             "name": "Parse Form",
@@ -220,7 +220,7 @@
                 "nodeCredentialType": "googleApi",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'transactions' }, { name: 'totalUsers' }, { name: 'firstTimePurchasers' }], metricFilter: { filter: { fieldName: 'sessions', numericFilter: { operation: 'GREATER_THAN_OR_EQUAL', value: { int64Value: '50' } } } }, orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: 10000 }) }}",
+                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'ecommercePurchases' }, { name: 'totalUsers' }, { name: 'firstTimePurchasers' }], orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: 1000 }) }}",
                 "options": {}
             },
             "id": "fetch-ga4-lp",
@@ -348,7 +348,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// ============================================================\n// PYTHON BRIDGE — Consolidate all data for external Python API\n// ============================================================\n\nconst warnings = [];\nconst safeGet = (nodeName) => {\n  try {\n    const items = $(nodeName).all().map(i => i.json);\n    if (items.length === 0) warnings.push(nodeName + ': 0 items');\n    return items;\n  } catch (e) {\n    warnings.push(nodeName + ' FAILED: ' + e.message);\n    return [];\n  }\n};\n\nconst feed = safeGet('Normalize Feed + Margins');\nconst meta = safeGet('Normalize Meta Ads');\nconst items = safeGet('Normalize GA4 Items');\nconst lp = safeGet('Normalize GA4 LP');\n\nlet config = {};\ntry { config = $('Margin Resolver').first().json; } catch(e) {}\n\n// Log data sizes for debugging\nconsole.log('Python Bridge: feed=' + feed.length + ', meta=' + meta.length + ', items=' + items.length + ', lp=' + lp.length);\nif (warnings.length > 0) console.log('WARNINGS: ' + warnings.join('; '));\n\n// Return consolidated payload as single item\nreturn [{ json: {\n  feed: feed,\n  meta_ads: meta,\n  ga4_items: items,\n  ga4_lp: lp,\n  _debug: { feed: feed.length, meta: meta.length, items: items.length, lp: lp.length, warnings: warnings },\n  config: {\n    brand: config.BRAND || '',\n    vat_rate: config.VAT_RATE || 0.23,\n    default_margin: config.DEFAULT_MARGIN || 0.10,\n    margin_rules: config.MARGIN_RULES || []\n  }\n} }];"
+                "jsCode": "// ============================================================\n// PYTHON BRIDGE — Consolidate all data for external Python API\n// ============================================================\n\nconst warnings = [];\nconst safeGet = (nodeName) => {\n  try {\n    const items = $(nodeName).all().map(i => i.json);\n    if (items.length === 0) warnings.push(nodeName + ': 0 items');\n    return items;\n  } catch (e) {\n    warnings.push(nodeName + ' FAILED: ' + e.message);\n    return [];\n  }\n};\n\nconst feed = safeGet('Normalize Feed + Margins');\nconst meta = safeGet('Normalize Meta Ads');\nconst items = safeGet('Normalize GA4 Items');\nconst lp = safeGet('Normalize GA4 LP');\n\nlet config = {};\ntry { config = $('Margin Resolver').first().json; } catch(e) {}\n\n// Log data sizes for debugging\nconsole.log('Python Bridge: feed=' + feed.length + ', meta=' + meta.length + ', items=' + items.length + ', lp=' + lp.length);\nif (warnings.length > 0) console.log('WARNINGS: ' + warnings.join('; '));\n\n// Return consolidated payload as single item\nreturn [{ json: {\n  feed: feed,\n  meta_ads: meta,\n  ga4_items: items,\n  ga4_lp: lp,\n  _debug: { feed: feed.length, meta: meta.length, items: items.length, lp: lp.length, warnings: warnings, date_from: config.DATE_FROM, date_to: config.DATE_TO },\n  config: {\n    brand: config.BRAND || '',\n    vat_rate: config.VAT_RATE || 0.23,\n    default_margin: config.DEFAULT_MARGIN || 0.10,\n    margin_rules: config.MARGIN_RULES || []\n  }\n} }];"
             },
             "id": "merger-node",
             "name": "Python Bridge",
@@ -742,9 +742,9 @@
             }
         ]
     },
-    "versionId": "8378b186-e15c-40ea-adc7-7613040d18c5",
+    "versionId": "7402e836-a4dc-45b5-88f7-1b0a895f9918",
     "activeVersionId": null,
-    "versionCounter": 74,
+    "versionCounter": 77,
     "triggerCount": 0,
     "shared": [
         {
@@ -769,7 +769,7 @@
                         "userId": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
                         "projectId": "HdWBpWyygCpr2hPz",
                         "user": {
-                            "updatedAt": "2026-02-14T05:13:30.000Z",
+                            "updatedAt": "2026-02-15T05:01:32.000Z",
                             "createdAt": "2025-06-04T17:12:05.084Z",
                             "id": "316d3dd2-98f9-4f16-8b3b-d7b4f93931ca",
                             "email": "chris@ironcode.io",
@@ -794,7 +794,7 @@
                             },
                             "disabled": false,
                             "mfaEnabled": false,
-                            "lastActiveAt": "2026-02-14",
+                            "lastActiveAt": "2026-02-15",
                             "isPending": false
                         }
                     }
