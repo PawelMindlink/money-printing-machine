@@ -113,6 +113,15 @@ def _prepare_feed(feed_df):
             lambda x: bl.normalize_url(x) if pd.notna(x) and x else ''
         )
 
+    # FIX: n8n sends 'norm_url_path' which is mapped to 'path_key'.
+    # n8n strips leading slash, but internal logic expects it.
+    if 'path_key' in feed_df.columns:
+        feed_df['path_key'] = feed_df['path_key'].fillna('').astype(str).str.strip()
+        feed_df['path_key'] = feed_df['path_key'].apply(
+            lambda x: f"/{x}" if x and not x.startswith('/') else x
+        )
+
+
     # Generate path_key from norm_url if missing
     if 'path_key' not in feed_df.columns and 'norm_url' in feed_df.columns:
         feed_df['path_key'] = feed_df['norm_url'].apply(
