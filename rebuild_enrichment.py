@@ -1,6 +1,8 @@
 """
-Rebuild Enrichment Pipeline v2 — HTTP Request based (n8n server has no AI community nodes).
-Proper escaping via Python json.dumps.
+Rebuild Enrichment Pipeline v3 — NATIVE AI NODES.
+- @n8n/n8n-nodes-langchain.anthropic for Claude analysis
+- @n8n/n8n-nodes-langchain.perplexity for reviews + category
+- Removes user's experimental nodes (AI Agent, AI Agent1, Analyze document)
 """
 import json
 import os
@@ -134,35 +136,17 @@ return results;"""
 COLLECT_CACHED_CODE = """const items = $input.all();
 return items.map(item => ({ json: { ...item.json, _source: 'cache' } }));"""
 
-EXTRACT_HARVEST_CODE = """const items = $input.all();
+MERGE_HARVEST_CODE = """// Merge Perplexity reviews + category data with original product data
+const items = $input.all();
 const results = [];
 
 for (const item of items) {
   const d = item.json;
-  
-  // Extract text from Perplexity response
-  let reviews = '';
-  let category = '';
-  
-  if (d._reviews_response) {
-    try {
-      const r = typeof d._reviews_response === 'string' ? JSON.parse(d._reviews_response) : d._reviews_response;
-      reviews = r.choices?.[0]?.message?.content || '';
-    } catch (e) { reviews = String(d._reviews_response); }
-  }
-  
-  if (d._category_response) {
-    try {
-      const c = typeof d._category_response === 'string' ? JSON.parse(d._category_response) : d._category_response;
-      category = c.choices?.[0]?.message?.content || '';
-    } catch (e) { category = String(d._category_response); }
-  }
-  
   results.push({
     json: {
       ...d,
-      _product_reviews: reviews.substring(0, 2000),
-      _category_insights: category.substring(0, 2000)
+      _product_reviews: (d._reviews_text || '').substring(0, 2000),
+      _category_insights: (d._category_text || '').substring(0, 2000)
     }
   });
 }
@@ -174,12 +158,12 @@ const results = [];
 
 for (const item of items) {
   const d = item.json;
-  const prompt = 'ACT AS Consumer Psychologist. Create psychographic profile for: ' + (d.feed_title || '') + ' (Category: ' + (d.feed_category || '') + ').\\n\\nREVIEWS:\\n' + (d._product_reviews || 'No data') + '\\n\\nCATEGORY INSIGHTS:\\n' + (d._category_insights || 'No data') + '\\n\\nReturn ONLY valid JSON with these 9 keys:\\n{"persona_name":"One-word persona label","persona_dream":"#1 dream outcome","persona_fear":"#1 fear/pain","persona_awareness":"unaware|problem_aware|solution_aware|product_aware","tech_translator":"Feature->Benefit pairs","social_proof_quote":"2-3 strongest quotes","competitive_edge":"What makes this product better","visual_hook_suggestion":"For Meta Ad: what to zoom/highlight","buying_objections":"Top 2-3 hesitations"}\\nPolish language. Emotional, copywriter-ready. NO HALLUCINATIONS.';
-  
+  const prompt = 'ACT AS Consumer Psychologist & E-commerce Strategist.\\nCreate psychographic profile for: ' + (d.feed_title || '') + ' (Category: ' + (d.feed_category || '') + ').\\n\\n[PRODUCT REVIEWS]\\n' + (d._product_reviews || 'Brak danych') + '\\n\\n[CATEGORY INSIGHTS]\\n' + (d._category_insights || 'Brak danych') + '\\n\\nReturn ONLY valid JSON with these 9 keys:\\n{"persona_name":"One-word persona label","persona_dream":"#1 dream outcome","persona_fear":"#1 fear/pain","persona_awareness":"unaware|problem_aware|solution_aware|product_aware","tech_translator":"Feature->Benefit pairs separated by |","social_proof_quote":"2-3 strongest quotes from reviews","competitive_edge":"What makes this product better","visual_hook_suggestion":"For Meta Ad: what feature to zoom/highlight","buying_objections":"Top 2-3 hesitation reasons"}\\n\\nRULES: Polish language. Emotional, copywriter-ready. NO HALLUCINATIONS. Only use info from provided sources.';
+
   results.push({
     json: {
       ...d,
-      _claude_messages: JSON.stringify([{ role: 'user', content: prompt }])
+      _claude_prompt: prompt
     }
   });
 }
@@ -191,16 +175,16 @@ const results = [];
 
 for (const item of items) {
   const d = item.json;
-  
-  let text = '';
-  try {
-    const resp = typeof d._claude_response === 'string' ? JSON.parse(d._claude_response) : d._claude_response;
-    text = resp?.content?.[0]?.text || '';
-  } catch (e) { text = String(d._claude_response || ''); }
-  
+
+  // Native Anthropic node outputs to 'text' or 'content' field
+  let text = d.text || d.content || d.output || '';
+  if (typeof text === 'object') {
+    text = text.content?.[0]?.text || JSON.stringify(text);
+  }
+
   let analysis = {};
   try {
-    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    text = String(text).replace(/```json/g, '').replace(/```/g, '').trim();
     analysis = JSON.parse(text);
   } catch (e) {
     try {
@@ -236,7 +220,7 @@ const items = $input.all();
 for (const item of items) {
   const d = item.json;
   if (d._cacheHit) continue;
-  
+
   const entry = {
     product_id: d.feed_id,
     harvest_date: new Date().toISOString(),
@@ -253,7 +237,7 @@ for (const item of items) {
       harvest_date: d.harvest_date || ''
     }
   };
-  
+
   try { fs.writeFileSync(d._cachePath, JSON.stringify(entry, null, 2), 'utf-8'); } catch (e) {}
 }
 
@@ -265,7 +249,7 @@ const path = require('path');
 const items = $input.all();
 if (items.length === 0) return [{ json: { status: 'no_items' } }];
 
-const skip = ['_brand','_projectRoot','_cacheDir','_cacheKey','_cachePath','_cacheHit','_source','_product_reviews','_category_insights','_reviews_response','_category_response','_claude_messages','_claude_response','_quality_ok','_quality_filled'];
+const skip = ['_brand','_projectRoot','_cacheDir','_cacheKey','_cachePath','_cacheHit','_source','_product_reviews','_category_insights','_reviews_text','_category_text','_claude_prompt','_claude_response'];
 const keys = Object.keys(items[0].json).filter(k => !skip.includes(k));
 
 const header = keys.join(',');
@@ -292,58 +276,15 @@ return [{
   }
 }];"""
 
-# ── PERPLEXITY CALL CODE (HTTP Request approach) ──
-PERPLEXITY_REVIEWS_CODE = """const items = $input.all();
-const results = [];
-
-for (const item of items) {
-  const d = item.json;
-  const query = 'Znajdz opinie i recenzje uzytkow o produkcie: ' + (d.feed_title || '') + '. Szukam pozytywnych cytatow i doswiadczen.';
-  
-  results.push({
-    json: {
-      ...d,
-      _perplexity_body_reviews: JSON.stringify({
-        model: 'sonar',
-        messages: [{ role: 'user', content: query }]
-      })
-    }
-  });
-}
-
-return results;"""
-
-PERPLEXITY_CATEGORY_CODE = """const items = $input.all();
-const results = [];
-
-for (const item of items) {
-  const d = item.json;
-  const query = 'Kategoria: ' + (d.feed_category || '') + '. Czego ludzie szukaja kupujac takie produkty? Jakie maja obawy? Co ich zaskakuje?';
-  
-  results.push({
-    json: {
-      ...d,
-      _perplexity_body_category: JSON.stringify({
-        model: 'sonar',
-        messages: [{ role: 'user', content: query }]
-      })
-    }
-  });
-}
-
-return results;"""
-
-
-# ── BUILD WORKFLOW ──
+# ── BUILD WORKFLOW with NATIVE AI NODES ──
 workflow = {
     "name": "Enrichment Pipeline (Process 3)",
     "nodes": [
-        # TRIGGERS
+        # === TRIGGERS ===
         {
             "id": "enrich-trigger", "name": "Manual Trigger",
             "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1,
-            "position": [250, 200],
-            "notes": "Manual run: scans Output/ for all brands"
+            "position": [250, 200]
         },
         {
             "id": "enrich-webhook", "name": "MSC-ALGO Trigger",
@@ -355,16 +296,15 @@ workflow = {
                 "httpMethod": "POST",
                 "responseMode": "onReceived",
                 "options": {}
-            },
-            "notes": "POST {brand:'X'} from MSC-ALGO"
+            }
         },
         {
-            "id": "enrich-extract-brand", "name": "Extract Brand from Webhook",
+            "id": "enrich-extract-brand", "name": "Extract Brand",
             "type": "n8n-nodes-base.code", "typeVersion": 2,
             "position": [450, 450],
             "parameters": {"jsCode": EXTRACT_BRAND_CODE}
         },
-        # PHASE 1
+        # === PHASE 1: Discovery + Config ===
         {
             "id": "enrich-discover", "name": "Discover Brands",
             "type": "n8n-nodes-base.code", "typeVersion": 2,
@@ -435,128 +375,93 @@ workflow = {
             "position": [1850, 100],
             "parameters": {"jsCode": COLLECT_CACHED_CODE}
         },
-        # PHASE 2: Perplexity via HTTP Request
+        # === PHASE 2: NATIVE Perplexity Nodes ===
         {
-            "id": "enrich-prep-reviews", "name": "Prep Perplexity Reviews",
-            "type": "n8n-nodes-base.code", "typeVersion": 2,
+            "id": "enrich-perplexity-reviews", "name": "Perplexity: Reviews",
+            "type": "@n8n/n8n-nodes-langchain.perplexity", "typeVersion": 1,
             "position": [1850, 300],
-            "parameters": {"jsCode": PERPLEXITY_REVIEWS_CODE}
-        },
-        {
-            "id": "enrich-call-reviews", "name": "Call Perplexity: Reviews",
-            "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
-            "position": [2050, 300],
             "parameters": {
-                "method": "POST",
-                "url": "https://api.perplexity.ai/chat/completions",
-                "sendHeaders": True,
-                "headerParameters": {
-                    "parameters": [
-                        {"name": "Authorization", "value": "=Bearer {{ $env.PERPLEXITY_API_KEY }}"},
-                        {"name": "Content-Type", "value": "application/json"}
-                    ]
-                },
-                "sendBody": True,
-                "specifyBody": "string",
-                "body": "={{ $json._perplexity_body_reviews }}",
-                "options": {"timeout": 30000}
+                "prompt": "={{ 'Znajdź opinie, recenzje i komentarze użytkowników o produkcie: ' + $json.feed_title + '. Szukam POZYTYWNYCH cytatów, konkretnych doświadczeń i opinii. Język polski. Jeśli brak danych, napisz: Brak danych.' }}",
+                "options": {}
             },
-            "notes": "Phase 2: Perplexity API for product reviews"
+            "credentials": {
+                "perplexityApi": {
+                    "id": "",
+                    "name": "Perplexity API"
+                }
+            }
         },
         {
-            "id": "enrich-prep-category", "name": "Prep Perplexity Category",
-            "type": "n8n-nodes-base.code", "typeVersion": 2,
+            "id": "enrich-perplexity-category", "name": "Perplexity: Category",
+            "type": "@n8n/n8n-nodes-langchain.perplexity", "typeVersion": 1,
             "position": [1850, 500],
-            "parameters": {"jsCode": PERPLEXITY_CATEGORY_CODE}
-        },
-        {
-            "id": "enrich-call-category", "name": "Call Perplexity: Category",
-            "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
-            "position": [2050, 500],
             "parameters": {
-                "method": "POST",
-                "url": "https://api.perplexity.ai/chat/completions",
-                "sendHeaders": True,
-                "headerParameters": {
-                    "parameters": [
-                        {"name": "Authorization", "value": "=Bearer {{ $env.PERPLEXITY_API_KEY }}"},
-                        {"name": "Content-Type", "value": "application/json"}
-                    ]
-                },
-                "sendBody": True,
-                "specifyBody": "string",
-                "body": "={{ $json._perplexity_body_category }}",
-                "options": {"timeout": 30000}
+                "prompt": "={{ 'Kategoria produktów: ' + $json.feed_category + '. Czego ludzie szukają kupując takie produkty? Jakie mają obawy i problemy? Co ich zaskakuje pozytywnie? Podaj konkretne przykłady z forów i opinii. Język polski.' }}",
+                "options": {}
             },
-            "notes": "Phase 2: Perplexity API for category insights"
+            "credentials": {
+                "perplexityApi": {
+                    "id": "",
+                    "name": "Perplexity API"
+                }
+            }
         },
-        # PHASE 2: Extract + Merge
-        {
-            "id": "enrich-extract-harvest", "name": "Extract Harvest Data",
-            "type": "n8n-nodes-base.code", "typeVersion": 2,
-            "position": [2250, 400],
-            "parameters": {"jsCode": EXTRACT_HARVEST_CODE}
-        },
-        # PHASE 3: Claude
+        # === PHASE 2: Prepare Claude Prompt ===
         {
             "id": "enrich-prep-claude", "name": "Prepare Claude Prompt",
             "type": "n8n-nodes-base.code", "typeVersion": 2,
-            "position": [2450, 400],
+            "position": [2100, 400],
             "parameters": {"jsCode": PREPARE_CLAUDE_CODE}
         },
+        # === PHASE 3: NATIVE Anthropic Node ===
         {
-            "id": "enrich-call-claude", "name": "Claude: Analyze",
-            "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
-            "position": [2650, 400],
+            "id": "enrich-claude", "name": "Claude: Analyze",
+            "type": "@n8n/n8n-nodes-langchain.anthropic", "typeVersion": 1,
+            "position": [2350, 400],
             "parameters": {
-                "method": "POST",
-                "url": "https://api.anthropic.com/v1/messages",
-                "sendHeaders": True,
-                "headerParameters": {
-                    "parameters": [
-                        {"name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}"},
-                        {"name": "anthropic-version", "value": "2023-06-01"},
-                        {"name": "Content-Type", "value": "application/json"}
-                    ]
-                },
-                "sendBody": True,
-                "specifyBody": "string",
-                "body": "={{ JSON.stringify({ model: 'claude-sonnet-4-5-20250514', max_tokens: 2048, messages: JSON.parse($json._claude_messages) }) }}",
-                "options": {"timeout": 60000}
+                "resource": "text",
+                "operation": "sendMessage",
+                "prompt": "={{ $json._claude_prompt }}",
+                "options": {}
             },
-            "notes": "Phase 3: Claude Sonnet analyzes harvested insights"
+            "credentials": {
+                "anthropicApi": {
+                    "id": "",
+                    "name": "Anthropic API"
+                }
+            }
         },
         {
             "id": "enrich-parse", "name": "Parse Analysis",
             "type": "n8n-nodes-base.code", "typeVersion": 2,
-            "position": [2850, 400],
+            "position": [2550, 400],
             "parameters": {"jsCode": PARSE_ANALYSIS_CODE}
         },
         {
             "id": "enrich-update-cache", "name": "Update Cache",
             "type": "n8n-nodes-base.code", "typeVersion": 2,
-            "position": [3050, 400],
+            "position": [2750, 400],
             "parameters": {"jsCode": UPDATE_CACHE_CODE}
         },
-        # PHASE 4: Output
+        # === PHASE 4: Output ===
         {
             "id": "enrich-merge-all", "name": "Merge All Results",
             "type": "n8n-nodes-base.merge", "typeVersion": 3,
-            "position": [3250, 250],
+            "position": [2950, 250],
             "parameters": {"mode": "append"}
         },
         {
             "id": "enrich-write-csv", "name": "Write Enriched CSV",
             "type": "n8n-nodes-base.code", "typeVersion": 2,
-            "position": [3450, 250],
+            "position": [3150, 250],
             "parameters": {"jsCode": WRITE_CSV_CODE}
         },
-        # ERROR HANDLING
+        # === ERROR HANDLING ===
         {
             "id": "enrich-error-trigger", "name": "Error Trigger",
             "type": "n8n-nodes-base.errorTrigger", "typeVersion": 1,
             "position": [250, 650],
-            "notes": "Only fires on real errors (shows example data when manually tested — this is normal n8n behavior)"
+            "notes": "Fires only on real errors (shows example data when tested manually — normal n8n behavior)"
         },
         {
             "id": "enrich-error-log", "name": "Log Error",
@@ -567,8 +472,8 @@ workflow = {
     ],
     "connections": {
         "Manual Trigger": {"main": [[{"node": "Discover Brands", "type": "main", "index": 0}]]},
-        "MSC-ALGO Trigger": {"main": [[{"node": "Extract Brand from Webhook", "type": "main", "index": 0}]]},
-        "Extract Brand from Webhook": {"main": [[{"node": "Load Config", "type": "main", "index": 0}]]},
+        "MSC-ALGO Trigger": {"main": [[{"node": "Extract Brand", "type": "main", "index": 0}]]},
+        "Extract Brand": {"main": [[{"node": "Load Config", "type": "main", "index": 0}]]},
         "Discover Brands": {"main": [[{"node": "Load Config", "type": "main", "index": 0}]]},
         "Load Config": {"main": [[{"node": "Read Growth CSV", "type": "main", "index": 0}]]},
         "Read Growth CSV": {"main": [[{"node": "Filter Actionable", "type": "main", "index": 0}]]},
@@ -579,17 +484,14 @@ workflow = {
             "main": [
                 [{"node": "Collect Cached", "type": "main", "index": 0}],
                 [
-                    {"node": "Prep Perplexity Reviews", "type": "main", "index": 0},
-                    {"node": "Prep Perplexity Category", "type": "main", "index": 0}
+                    {"node": "Perplexity: Reviews", "type": "main", "index": 0},
+                    {"node": "Perplexity: Category", "type": "main", "index": 0}
                 ]
             ]
         },
         "Collect Cached": {"main": [[{"node": "Merge All Results", "type": "main", "index": 1}]]},
-        "Prep Perplexity Reviews": {"main": [[{"node": "Call Perplexity: Reviews", "type": "main", "index": 0}]]},
-        "Call Perplexity: Reviews": {"main": [[{"node": "Extract Harvest Data", "type": "main", "index": 0}]]},
-        "Prep Perplexity Category": {"main": [[{"node": "Call Perplexity: Category", "type": "main", "index": 0}]]},
-        "Call Perplexity: Category": {"main": [[{"node": "Extract Harvest Data", "type": "main", "index": 0}]]},
-        "Extract Harvest Data": {"main": [[{"node": "Prepare Claude Prompt", "type": "main", "index": 0}]]},
+        "Perplexity: Reviews": {"main": [[{"node": "Prepare Claude Prompt", "type": "main", "index": 0}]]},
+        "Perplexity: Category": {"main": [[{"node": "Prepare Claude Prompt", "type": "main", "index": 0}]]},
         "Prepare Claude Prompt": {"main": [[{"node": "Claude: Analyze", "type": "main", "index": 0}]]},
         "Claude: Analyze": {"main": [[{"node": "Parse Analysis", "type": "main", "index": 0}]]},
         "Parse Analysis": {"main": [[{"node": "Update Cache", "type": "main", "index": 0}]]},
@@ -605,15 +507,10 @@ out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Workflows", "Enr
 with open(out, "w", encoding="utf-8") as f:
     json.dump(workflow, f, indent=4, ensure_ascii=False)
 
-print(f"Rebuilt: {len(workflow['nodes'])} nodes, {len(workflow['connections'])} connections")
-
-# Verify
+print(f"Rebuilt: {len(workflow['nodes'])} nodes")
+print(f"\nNative AI nodes:")
 for n in workflow['nodes']:
-    code = n.get('parameters', {}).get('jsCode', '')
-    if '\\\\n' in json.dumps(code):
-        # This checks the JSON representation
-        pass  # json.dumps correctly escapes \n to \\n in JSON
-    if code and '\n' not in code and len(code) > 50:
-        print(f"WARNING: Missing newlines in {n['name']}")
+    if 'langchain' in n['type']:
+        print(f"  ✅ {n['name']:30s} → {n['type']}")
 
-print("All node types: " + str(sorted(set(n['type'] for n in workflow['nodes']))))
+print(f"\nAll node types: {sorted(set(n['type'] for n in workflow['nodes']))}")
