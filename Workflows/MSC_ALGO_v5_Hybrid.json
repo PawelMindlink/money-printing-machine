@@ -467,6 +467,27 @@
                 512
             ],
             "notes": "Safety wrapper for API response formatting."
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://mindlink-n8n.ironcode.io/webhook/enrichment-trigger",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ brand: $node[\"Parse Form\"].json.brand }) }}",
+                "options": {
+                    "timeout": 10000
+                }
+            },
+            "id": "trigger-enrichment",
+            "name": "Trigger Enrichment",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                3600,
+                512
+            ],
+            "notes": "AUTO-CHAIN: Calls Enrichment Pipeline webhook with brand name after MSC-ALGO completes"
         }
     ],
     "connections": {
@@ -693,6 +714,17 @@
                 [
                     {
                         "node": "Output to Google Sheets",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Output to Google Sheets": {
+            "main": [
+                [
+                    {
+                        "node": "Trigger Enrichment",
                         "type": "main",
                         "index": 0
                     }

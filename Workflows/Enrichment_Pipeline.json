@@ -8,9 +8,41 @@
             "typeVersion": 1,
             "position": [
                 250,
-                300
+                200
             ],
-            "notes": "Run manually or trigger after MSC-ALGO completes"
+            "notes": "Manual run: scans Output/ for all brands via Discover Brands"
+        },
+        {
+            "id": "enrich-webhook",
+            "name": "MSC-ALGO Trigger",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                250,
+                450
+            ],
+            "webhookId": "enrichment-trigger",
+            "parameters": {
+                "path": "enrichment-trigger",
+                "httpMethod": "POST",
+                "responseMode": "onReceived",
+                "options": {}
+            },
+            "notes": "Receives {brand: 'X'} from MSC-ALGO → goes directly to Load Config (skips discovery)"
+        },
+        {
+            "id": "enrich-extract-brand",
+            "name": "Extract Brand from Webhook",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                450
+            ],
+            "parameters": {
+                "jsCode": "// Extract brand from MSC-ALGO webhook payload\nconst body = $input.first().json.body || $input.first().json;\nconst brand = body.brand || body.Brand;\n\nif (!brand) {\n  throw new Error('Webhook must POST {brand: \"Name\"}. Received: ' + JSON.stringify(body));\n}\n\nreturn [{ json: { brand } }];"
+            },
+            "notes": "Extracts brand from webhook POST body and passes to Load Config"
         },
         {
             "id": "enrich-set-brand",
@@ -380,6 +412,28 @@
                 [
                     {
                         "node": "Discover Brands",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "MSC-ALGO Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Extract Brand from Webhook",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Extract Brand from Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Load Config",
                         "type": "main",
                         "index": 0
                     }
