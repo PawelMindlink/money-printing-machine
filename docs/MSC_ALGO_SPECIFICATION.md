@@ -27,19 +27,32 @@ Progi wyznaczamy dynamicznie na podstawie danych z ostatnich 90 dni (używając 
 3. **Item Views:** `P75_VOL_ITEM` (Views), `P75_EFF_ITEM` (GPPV)
    *(Uwaga: Jeśli P75 = 0, ustawiamy minimalny próg 1.0, aby uniknąć błędów logicznych)*
 
-### D. Wyliczenia Finansowe (ROAS & Caps)
+### D. Wyliczenia Finansowe (ROAS & Caps) — v3.0
 
-1. **Bid Cap (Max CPA)**
-   `Bid_Cap` = `(Price / (1 + VAT))` * `Margin`
-   *(Maksymalny koszt pozyskania, przy którym wychodzimy na zero)*
+> **Uwaga**: Bid/Cost Cap obliczane na poziomie **klastra cenowego** z ceną kotwicy (anchor = najdroższy produkt w klastrze).
 
-2. **Critical ROAS (Break Even)**
-   `Critical_ROAS` = `(1 + VAT)` / `Margin`
-   *(Minimalny ROAS, poniżej którego tracimy pieniądze na każdej sztuce)*
+1. **Bid Cap (Max CPA)** — Hard Ceiling
+   `Bid_Cap` = `(Anchor_Price / (1 + VAT))` * `Margin`
+   *(Meta nigdy nie przekroczy tego kosztu za jedną konwersję)*
 
-3. **Scaling ROAS (Target)**
-   `Scaling_ROAS` = `Critical_ROAS` * 1.2
-   *(Bezpieczny cel ROAS zapewniający 20% buforu zysku)*
+2. **Cost Cap (Target CPA)** — Soft Target
+   `Cost_Cap` = `Bid_Cap` * 0.70
+   *(Meta optymalizuje średni koszt poniżej tego poziomu. 30% rezerwa zysku)*
+
+3. **Critical ROAS (Break Even + Buffer)**
+   `Critical_ROAS` = `((1 + VAT) / Margin)` * 1.2
+   *(Break-even ROAS + 20% bufor bezpieczeństwa na wahania dziennego CPA)*
+
+4. **Scaling ROAS (Target)**
+   `Scaling_ROAS` = `Critical_ROAS` * 1.4
+   *(Powyżej tego ROAS — ad set over-performs. Można obniżyć target po więcej wolumenu)*
+
+Inwarianty (zawsze prawdziwe):
+
+```
+scaling_roas > critical_roas > break_even_pure
+calc_cost_cap < calc_bid_cap
+```
 
 ### E. Logika Przypisywania Marży
 

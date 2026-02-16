@@ -79,16 +79,21 @@ To optimize Meta Ads Bidding, we group products into **Price Clusters**. This al
     * *Logic:* The Leader's price cannot be more than 150% of the cheapest member. This prevents a 1000 PLN product from sharing a bid cap with a 100 PLN product.
 4. **Iteration**: If a product fails the check, it becomes the Leader of Cluster 2, and the process repeats.
 
-### Bidding Strategy
+### Bidding Strategy (v3.0 — Anchor-Based)
 
-Bids are calculated at the **Cluster Level**:
+Bids are calculated at the **Cluster Level** using the **anchor price** (highest price in the cluster = leader):
 
-1. **Cluster Average Margin**: We calculate the mean Contribution Profit (Unit Margin) of all products in the cluster.
-2. **Bid Cap (Efficiency Target)**:
-    $$BidCap = ClusterAvgMargin \times 30\%$$
-3. **Cost Cap (Breakeven Limit)**:
-    $$CostCap = ClusterAvgMargin \times 100\%$$
-*Result:* All products in "Cluster A" receive identical Bid/Cost caps, stabilizing delivery.
+1. **Bid Cap (Hard Ceiling)**: Max CPA Meta will NEVER exceed per single conversion.
+    $$BidCap = \frac{AnchorPrice}{1 + VAT} \times Margin$$
+2. **Cost Cap (Soft Target)**: 30% profit reserve. Meta optimizes average cost to stay at or below this.
+    $$CostCap = BidCap \times 0.70$$
+3. **Critical ROAS**: Break-even + 20% safety buffer for daily CPA fluctuations.
+    $$CriticalROAS = \frac{1 + VAT}{Margin} \times 1.2$$
+4. **Scaling ROAS**: Above this, trade efficiency for volume.
+    $$ScalingROAS = CriticalROAS \times 1.4$$
+
+*Invariants:* `CostCap < BidCap` and `ScalingROAS > CriticalROAS` (always hold).
+*Result:* All products in a cluster receive identical Bid/Cost caps, stabilizing delivery.
 
 ### Non-Product Logic
 
