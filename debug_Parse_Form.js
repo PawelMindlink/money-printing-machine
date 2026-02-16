@@ -1,5 +1,5 @@
 // ============================================================
-// PARSE FORM
+// PARSE FORM (v2: VAT/Margin from brand_config, not form)
 // ============================================================
 const form = $input.first().json;
 
@@ -15,15 +15,15 @@ const now = new Date();
 const y1ago = new Date(now);
 y1ago.setFullYear(y1ago.getFullYear() - 1);
 
-return [{ json: {
-  _brand_name: brandName,
-  _brand_key: brandName.toLowerCase(),
-  _vat_rate: parseFloat(form['VAT Rate']) || 0.23,
-  _default_margin: parseFloat(form['Default Margin']) || 0.10,
-  _feed_url: (form['Feed URL (XML)'] || '').trim(),
-  _sheet_id: sheetId,
-  _date_from: (form['Date From (YYYY-MM-DD)'] || '').trim() || y1ago.toISOString().split('T')[0],
-  _date_to: (form['Date To (YYYY-MM-DD)'] || '').trim() || now.toISOString().split('T')[0],
-  _form_ga4_id: (form['GA4 Property ID (opcjonalne)'] || '').trim(),
-  _form_meta_id: (form['Meta Account ID (opcjonalne)'] || '').trim()
-} }];
+return [{
+  json: {
+    _brand_name: brandName,
+    _brand_key: brandName.toLowerCase(),
+    _feed_url: (form['Feed URL (XML)'] || '').trim(),
+    _sheet_id: sheetId,
+    _date_from: (form['Date From (YYYY-MM-DD)'] || '').trim() || y1ago.toISOString().split('T')[0],
+    _date_to: (form['Date To (YYYY-MM-DD)'] || '').trim() || now.toISOString().split('T')[0],
+    _form_ga4_id: (form['GA4 Property ID (opcjonalne)'] || '').trim(),
+    _form_meta_id: (form['Meta Account ID (opcjonalne)'] || '').trim()
+  }
+}];

@@ -128,7 +128,7 @@ def run_ad_analysis(brand, input_dir, output_dir):
     df['calc_cost_cap'] = df['calc_bid_cap'] * 0.7
     
     # ROAS Metrics
-    df['calc_break_even_roas'] = 1 / df['base_gross_margin']
+    df['calc_critical_roas'] = df['base_gross_margin'].apply(lambda m: bl.calculate_critical_roas(vat_rate, m))
     df['calc_scaling_roas'] = df['base_gross_margin'].apply(lambda m: bl.calculate_scaling_roas(vat_rate, m))
     
     # E. Action Logic
@@ -144,7 +144,7 @@ def run_ad_analysis(brand, input_dir, output_dir):
         
         # 2. Potential Winner (High ROAS)
         # Even if profit < 0 (maybe low volume), if ROAS is healthy, it's scalable.
-        if roas >= row['calc_break_even_roas'] and spend > 0: return "COPY (ROAS)"
+        if roas >= row['calc_critical_roas'] and spend > 0: return "COPY (ROAS)"
         
         # 3. Proven Loser
         # If we spent enough to know it's bad. 
@@ -174,7 +174,7 @@ def run_ad_analysis(brand, input_dir, output_dir):
         # New Metrics
         'calc_bid_cap',
         'calc_cost_cap',
-        'calc_break_even_roas',
+        'calc_critical_roas',
         'calc_scaling_roas',
         'calc_contribution_profit',
         'calc_action'

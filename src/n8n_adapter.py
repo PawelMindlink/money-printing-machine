@@ -9,6 +9,18 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from complete_pipeline import run_pipeline_logic, join_and_enrich_data
 
+def _require_config(config, key, display_name):
+    """Require a config key, raise clear error if missing."""
+    value = config.get(key)
+    if value is None:
+        raise ValueError(
+            f"[MSC-ALGO] FATAL: '{display_name}' not found in config. "
+            f"This must be set in brand_config sheet of the Margin Rules Template. "
+            f"Without it, all financial calculations will be wrong. "
+            f"Example values: default_margin=0.10 (Iiyama), 0.58 (Bushido)."
+        )
+    return float(value)
+
 def main():
     """
     N8N Adapter:
@@ -61,10 +73,9 @@ def main():
         params = {
             'brand': config_in.get('brand', 'N8N_Run'),
             'vat': float(config_in.get('vat_rate', 0.23)),
-            'default_margin': float(config_in.get('default_margin', 0.5)),
+            'default_margin': _require_config(config_in, 'default_margin', 'default_margin'),
             'min_margin': float(config_in.get('min_margin', 0.1)),
             'category_overrides': config_in.get('category_overrides', []),
-            'margin_rules_df': None # Could pass rules if needed, skipping for now
         }
         
         # 3. Validation

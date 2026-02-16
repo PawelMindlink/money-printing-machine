@@ -42,7 +42,7 @@ class TestColumnConstants(unittest.TestCase):
             "meta_class", "ga4_class",
             "base_gross_margin", "calc_contribution_profit",
             "calc_price_cluster",
-            "critical_roas", "scaling_roas", "calc_break_even_roas",
+            "critical_roas", "scaling_roas", "calc_critical_roas",
             "calc_bid_cap", "calc_cost_cap",
             "meta_spend", "meta_revenue", "meta_purchases",
             "ga4lp_sessions", "ga4lp_revenue", "ga4lp_purchases",

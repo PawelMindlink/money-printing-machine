@@ -70,7 +70,7 @@ GOLD_STANDARD_COLS = [
     'calc_is_actionable', 'calc_action_type',
     'meta_class', 'ga4_class',
     'base_gross_margin', 'calc_contribution_profit', 'calc_price_cluster',
-    'critical_roas', 'scaling_roas', 'calc_break_even_roas',
+    'critical_roas', 'scaling_roas', 'calc_critical_roas',
     'calc_gpps', 'calc_cr', 'calc_frequency', 'calc_gppv',
     'arpu', 'arpiv',
     'meta_spend', 'meta_revenue', 'meta_purchases', 'calc_roas',
@@ -234,7 +234,7 @@ def process(payload: dict):
         for rule in margin_rules:
             if rule.get('match_type') in ('CATEGORY_EXACT', 'KEYWORD'):
                 category_overrides.append({
-                    'category_pattern': rule.get('match_value', ''),
+                    'category': rule.get('match_value', ''),
                     'rate': float(rule.get('margin_rate', default_margin)),
                     'match_type': rule.get('match_type', 'KEYWORD'),
                 })

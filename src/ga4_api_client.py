@@ -13,7 +13,7 @@ def _get_client(credentials_path):
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
     return BetaAnalyticsDataClient()
 
-def fetch_ga4_landing_pages(credentials_path, property_id, start_date='2024-01-01', end_date='today', limit=100000):
+def fetch_ga4_landing_pages(credentials_path, property_id, start_date='2025-02-06', end_date='2026-02-06', limit=100000):
     """
     Fetches GA4 Landing Page data using the official API.
     Returns a DataFrame compatible with the pipeline's expected format.
@@ -63,7 +63,7 @@ def fetch_ga4_landing_pages(credentials_path, property_id, start_date='2024-01-0
     return df
 
 
-def fetch_ga4_items(credentials_path, property_id, start_date='2024-01-01', end_date='today', limit=100000):
+def fetch_ga4_items(credentials_path, property_id, start_date='2025-02-06', end_date='2026-02-06', limit=100000):
     """
     Fetches GA4 Item-level data using the official API.
     Returns a DataFrame compatible with the pipeline's expected format.
@@ -112,6 +112,6 @@ def fetch_ga4_items(credentials_path, property_id, start_date='2024-01-01', end_
 
 
 # Legacy alias for backward compatibility
-def fetch_ga4_data(credentials_path, property_id, start_date='2024-01-01', end_date='today', limit=100000):
+def fetch_ga4_data(credentials_path, property_id, start_date='2025-02-06', end_date='2026-02-06', limit=100000):
     """Backward-compatible alias for fetch_ga4_landing_pages."""
     return fetch_ga4_landing_pages(credentials_path, property_id, start_date, end_date, limit)

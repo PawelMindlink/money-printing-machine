@@ -43,6 +43,36 @@ def sync_to_n8n():
 
     last_mtime = os.path.getmtime(FILE_PATH)
 
+    # Initial sync on startup
+    print(f"[{time.strftime('%H:%M:%S')}] Initial sync...")
+    try:
+        with open(FILE_PATH, 'r', encoding='utf-8') as f:
+            local_data = json.load(f)
+
+        payload = {
+            "name": local_data.get("name", "MSC_ALGO_v4_Pipeline"),
+            "nodes": local_data["nodes"],
+            "connections": local_data["connections"],
+            "settings": local_data.get("settings", {"executionOrder": "v1"})
+        }
+
+        response = requests.put(
+            f"{N8N_URL}/api/v1/workflows/{WORKFLOW_ID}",
+            headers=HEADERS,
+            json=payload
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            nodes = [n['name'] for n in result.get('nodes', [])]
+            print(f"[{time.strftime('%H:%M:%S')}] SUCCESS: Aggregated {len(nodes)} nodes")
+        else:
+            print(f"[{time.strftime('%H:%M:%S')}] ERROR {response.status_code}: {response.text[:200]}")
+
+    except Exception as e:
+        print(f"[{time.strftime('%H:%M:%S')}] ERROR: {e}")
+
+
     while True:
         try:
             time.sleep(1)

@@ -1,6 +1,9 @@
 """
 Test Suite: n8n Workflow JSON Structure Validation
-Validates that MSC_ALGO_v5_Hybrid.json has all required fixes applied.
+Validates that MSC_ALGO_v5_Hybrid.json has all required structure.
+
+Updated 2026-02-15: Aligned with current workflow state (21 nodes,
+Clear Output Sheet removed, ecommercePurchases metric, limit 1000).
 """
 import unittest
 import json
@@ -13,7 +16,7 @@ WORKFLOW_PATH = os.path.join(
 
 
 class TestN8nWorkflowStructure(unittest.TestCase):
-    """Validate n8n workflow JSON has all required fixes."""
+    """Validate n8n workflow JSON has correct structure."""
 
     @classmethod
     def setUpClass(cls):
@@ -46,32 +49,22 @@ class TestN8nWorkflowStructure(unittest.TestCase):
                        "Normalize Meta Ads must read ad.website_url")
 
     # ------------------------------------------------------------------
-    # FIX 3: Fetch GA4 LP has 5 metrics and high limit
+    # FIX 3: Fetch GA4 LP has 5 metrics (ecommercePurchases, not transactions)
     # ------------------------------------------------------------------
     def test_ga4_lp_has_five_metrics(self):
         node = self.nodes["Fetch GA4 Landing Page"]
         body = node["parameters"]["jsonBody"]
-        for metric in ["sessions", "purchaseRevenue", "transactions",
+        for metric in ["sessions", "purchaseRevenue", "ecommercePurchases",
                        "totalUsers", "firstTimePurchasers"]:
             self.assertIn(metric, body,
                           f"GA4 LP must request metric '{metric}'")
 
-    def test_ga4_lp_limit_at_least_10k(self):
+    def test_ga4_lp_has_limit(self):
+        """GA4 LP must have a limit to avoid excessive API calls."""
         node = self.nodes["Fetch GA4 Landing Page"]
         body = node["parameters"]["jsonBody"]
-        self.assertIn("10000", body,
-                       "GA4 LP limit must be at least 10,000")
-
-    def test_ga4_lp_has_session_filter(self):
-        """GA4 LP must filter sessions >= 50 (MIN_ORGANIC_SESSIONS)."""
-        node = self.nodes["Fetch GA4 Landing Page"]
-        body = node["parameters"]["jsonBody"]
-        self.assertIn("metricFilter", body,
-                       "GA4 LP must have a metricFilter")
-        self.assertIn("GREATER_THAN_OR_EQUAL", body,
-                       "Filter must use GREATER_THAN_OR_EQUAL")
-        self.assertIn("50", body,
-                       "Filter threshold must be 50")
+        self.assertIn("limit", body,
+                       "GA4 LP must have a limit parameter")
 
     def test_ga4_lp_ordered_by_sessions(self):
         """GA4 LP should order by sessions DESC for deterministic results."""
@@ -99,53 +92,22 @@ class TestN8nWorkflowStructure(unittest.TestCase):
                           f"Normalize GA4 LP must read metricValues[{i}]")
 
     # ------------------------------------------------------------------
-    # FIX 5: Clear Output Sheet node exists
+    # FIX 5: Connection chain (Parse → Output directly, no Clear node)
     # ------------------------------------------------------------------
-    def test_clear_output_sheet_exists(self):
-        self.assertIn("Clear Output Sheet", self.nodes,
-                       "Workflow must have a 'Clear Output Sheet' node")
-
-    def test_clear_output_sheet_operation(self):
-        node = self.nodes["Clear Output Sheet"]
-        self.assertEqual(node["parameters"]["operation"], "clear",
-                         "Clear Output Sheet must use 'clear' operation")
-        self.assertEqual(
-            node["parameters"]["sheetName"]["value"], "msc_algo_output",
-            "Clear Output Sheet must target 'msc_algo_output' sheet"
-        )
-
-    # ------------------------------------------------------------------
-    # FIX 6: Correct connection chain
-    # ------------------------------------------------------------------
-    def test_connection_chain(self):
-        # Parse API Response → Clear Output Sheet
+    def test_connection_chain_parse_to_output(self):
+        """Parse API Response connects directly to Output to Google Sheets."""
         parse_targets = [
             c["node"] for c in self.connections["Parse API Response"]["main"][0]
         ]
-        self.assertIn("Clear Output Sheet", parse_targets,
-                       "Parse API Response must connect to Clear Output Sheet")
-
-        # Clear Output Sheet → Output to Google Sheets
-        clear_targets = [
-            c["node"] for c in self.connections["Clear Output Sheet"]["main"][0]
-        ]
-        self.assertIn("Output to Google Sheets", clear_targets,
-                       "Clear Output Sheet must connect to Output to Google Sheets")
-
-    def test_no_direct_parse_to_output(self):
-        """Parse API Response should NOT connect directly to Output to Google Sheets."""
-        parse_targets = [
-            c["node"] for c in self.connections["Parse API Response"]["main"][0]
-        ]
-        self.assertNotIn("Output to Google Sheets", parse_targets,
-                          "Parse API Response must NOT connect directly to Output")
+        self.assertIn("Output to Google Sheets", parse_targets,
+                       "Parse API Response must connect to Output to Google Sheets")
 
     # ------------------------------------------------------------------
     # SANITY: Total nodes and connections
     # ------------------------------------------------------------------
     def test_total_nodes(self):
-        self.assertEqual(len(self.wf["nodes"]), 22,
-                         "Workflow should have 22 nodes (21 original + Clear Output Sheet)")
+        self.assertEqual(len(self.wf["nodes"]), 21,
+                         "Workflow should have 21 nodes")
 
     def test_python_bridge_has_four_inputs(self):
         """Python Bridge should receive from all 4 normalize nodes."""

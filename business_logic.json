@@ -51,7 +51,7 @@
             "ga4_property_id": "280127077",
             "vat_rate": 0.23,
             "margin_config": {
-                "default_rate": 0.10,
+                "default_rate": 0.15,
                 "category_overrides": [
                     {
                         "category": "biurowe",
@@ -80,62 +80,6 @@
                     {
                         "category": "wielkoformatowe",
                         "rate": 0.10
-                    },
-                    {
-                        "category": "interaktywne",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "interactive",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "dotykowe",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "touch",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "open frame",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "unified communication",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "akcesoria",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "accessories",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "uchwyty",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "mounts",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "ramiona",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "arms",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "linki",
-                        "rate": 0.15
-                    },
-                    {
-                        "category": "cables",
-                        "rate": 0.15
                     }
                 ]
             }

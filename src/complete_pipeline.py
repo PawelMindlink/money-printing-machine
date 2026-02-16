@@ -44,7 +44,15 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
     df = feed_df.copy() if not feed_df.empty else pd.DataFrame()
 
     vat = params.get('vat', 0.23)
-    default_margin = params.get('default_margin', 0.5)
+    default_margin = params.get('default_margin')
+    if default_margin is None:
+        raise ValueError(
+            "[MSC-ALGO] FATAL: 'default_margin' not found in params. "
+            "This must be set in brand_config sheet of the Margin Rules Template. "
+            "Without it, all margin calculations will be wrong. "
+            "Example: default_margin=0.10 for Iiyama, 0.58 for Bushido."
+        )
+    default_margin = float(default_margin)
     min_margin = params.get('min_margin', 0.1)
     category_overrides = params.get('category_overrides', [])
     brand = params.get('brand', 'API_Run')
@@ -345,7 +353,7 @@ def run_pipeline_logic(df, params):
     df['calc_cost_cap'] = df['cost_cap']
     df['critical_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_critical_roas(vat, x))
     df['scaling_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_scaling_roas(vat, x))
-    df['calc_break_even_roas'] = df['critical_roas']
+    df['calc_critical_roas'] = df['critical_roas']
     df['calc_roas'] = df['meta_revenue'] / df['meta_spend'].replace(0, 1)
     df['meta_class'] = df.apply(lambda r: bl.classify_meta_ads(r.get('calc_contribution_profit', 0), r.get('meta_spend', 0)), axis=1)
     ga4_thresholds = {
@@ -380,7 +388,14 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         
     vat = config.get('vat_rate', 0.23)
     margin_cfg = config.get('margin_config', {})
-    default_margin = margin_cfg.get('default_rate', 0.5)
+    default_margin = margin_cfg.get('default_rate')
+    if default_margin is None:
+        raise ValueError(
+            f"[MSC-ALGO] FATAL: 'default_rate' not found in margin_config for brand '{brand}'. "
+            f"Set it in business_logic.json under clients → {brand} → margin_config → default_rate. "
+            f"Example: 0.10 for Iiyama, 0.58 for Bushido."
+        )
+    default_margin = float(default_margin)
     category_overrides = margin_cfg.get('category_overrides', [])
     
     # Calculate Min Margin for Fallback
@@ -862,7 +877,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     # ROAS Targets (Function of Margin & VAT)
     df['critical_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_critical_roas(vat, x))
     df['scaling_roas'] = df['base_gross_margin'].apply(lambda x: bl.calculate_scaling_roas(vat, x))
-    df['calc_break_even_roas'] = df['critical_roas'] # Alias due to naming convention
+    df['calc_critical_roas'] = df['critical_roas']
     
     df['calc_roas'] = df['meta_revenue'] / df['meta_spend'].replace(0, 1)
     
@@ -905,7 +920,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         # Financial Metrics
         'base_gross_margin', 'calc_contribution_profit', 'calc_price_cluster',
         # ROAS Targets
-        'critical_roas', 'scaling_roas', 'calc_break_even_roas',
+        'critical_roas', 'scaling_roas', 'calc_critical_roas',
         # Efficiency Metrics
         'calc_gpps', 'calc_cr', 'calc_frequency', 'calc_gppv', 'arpu', 'arpiv',
         # Actual Performance (FUNNEL)

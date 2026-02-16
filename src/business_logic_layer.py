@@ -199,7 +199,12 @@ def assign_price_cluster(df, price_col='price_numeric'):
 
 def calculate_cluster_stats(df, price_col='calc_gross_price', margin_rate_col='base_gross_margin', vat_rate=0.23):
     """
-    Calculates stats for a cluster to determine bidding caps.
+    Calculates bidding caps for a price cluster.
+    
+    Uses the ANCHOR PRICE (max price in cluster = cluster leader) as the basis.
+    
+    Bid Cap  = anchor_price / (1+VAT) * margin  → full GP = max CPA (hard ceiling)
+    Cost Cap = Bid Cap * 0.70                    → target CPA (30% profit reserve)
     
     Args:
         df (pd.DataFrame): Dataframe containing ONLY items for ONE cluster.
@@ -209,41 +214,34 @@ def calculate_cluster_stats(df, price_col='calc_gross_price', margin_rate_col='b
         
     Returns:
         dict: {
-            'cluster_avg_margin': float,  # Average Contribution Unit Margin
-            'bid_cap': float,             # Cluster Limit
-            'cost_cap': float             # Efficiency Target
+            'cluster_avg_margin': float,  # Average Contribution Unit Margin (reference)
+            'bid_cap': float,             # Max CPA (hard ceiling)
+            'cost_cap': float             # Target CPA (soft target, 70% of bid_cap)
         }
     """
     if df.empty:
         return {'cluster_avg_margin': 0.0, 'bid_cap': 0.0, 'cost_cap': 0.0}
         
-    # Calculate Unit Contribution for each member
-    # Unit Contrib = (Price / (1+VAT)) * MarginRate
-    
     # Ensure numeric
     prices = pd.to_numeric(df[price_col], errors='coerce').fillna(0)
     margins = pd.to_numeric(df[margin_rate_col], errors='coerce').fillna(0)
     
+    # Average GP across cluster (for reference / diagnostics)
     net_prices = prices / (1 + vat_rate)
     unit_contributions = net_prices * margins
-    
-    # Cluster Average Margin (Avg Unit Contribution)
     avg_margin = unit_contributions.mean()
     
-    # Bidding Strategy (From User Prompt)
-    # Bid Cap: Cluster_Avg_Margin * Target_CPA_% (e.g. 30%)
-    # Cost Cap: Cluster_Avg_Margin * Break_Even_Ratio (e.g. 100%) - usually the "Don't exceed this" limit
+    # ANCHOR = cluster leader (highest price in cluster)
+    anchor_price = prices.max()
+    # Use the margin of the cluster (all items in a cluster share the same margin group)
+    cluster_margin = margins.iloc[0] if len(margins) > 0 else 0
     
-    # NOTE: User naming seems swapped from standard Meta usage, but we follow the FORMULA.
-    # Standard: Bid Cap is HARD LIMIT (Prevent loss), Cost Cap is SOFT TARGET (Efficiency).
-    # Prompt: "Bid Cap = Margin * 30%" -> This is very low, looks like a Target CPA.
-    # Prompt: "Cost Cap = Margin * BreakEven" -> This is the limit.
+    # Bid Cap = full Gross Profit at anchor price (max CPA you'd ever pay)
+    anchor_gp = (anchor_price / (1 + vat_rate)) * cluster_margin
+    bid_cap = anchor_gp
     
-    target_cpa_ratio = 0.3    # 30% of Margin
-    break_even_ratio = 1.0    # 100% of Margin
-    
-    bid_cap = avg_margin * target_cpa_ratio     # The "Efficiency" Target
-    cost_cap = avg_margin * break_even_ratio    # The "Breakeven" Limit
+    # Cost Cap = 70% of Bid Cap (target CPA with 30% profit reserve)
+    cost_cap = bid_cap * 0.70
     
     return {
         'cluster_avg_margin': avg_margin,
@@ -363,10 +361,11 @@ def determine_priority(ga4_class, meta_class):
 
 def calculate_bid_cap(price_numeric, vat_rate, gross_margin):
     """
-    Calculate Bid Cap for Meta Ads.
+    Calculate Bid Cap for Meta Ads (per-product version).
     Formula: Price / (1+VAT) * GrossMargin
     
-    This represents the maximum CPA (Cost Per Acquisition) that maintains profitability.
+    This represents the maximum CPA — the full Gross Profit on the product.
+    You should never pay more than this for a single conversion.
     """
     if pd.isna(price_numeric) or price_numeric <= 0:
         return 0.0
@@ -374,39 +373,45 @@ def calculate_bid_cap(price_numeric, vat_rate, gross_margin):
     return net_price * gross_margin
 
 
-def calculate_cost_cap(bid_cap, safety_factor=0.7):
+def calculate_cost_cap(bid_cap, safety_factor=0.70):
     """
     Calculate Cost Cap for Meta Ads.
-    Formula: BidCap * SafetyFactor (default 0.7 = 30% buffer)
+    Formula: BidCap * 0.70 (30% profit reserve)
     
-    This is a conservative CPA target.
+    Cost Cap < Bid Cap (always). This is the operational CPA target.
+    Meta optimizes average cost to stay at or below this level.
     """
     return bid_cap * safety_factor
 
 
 def calculate_critical_roas(vat_rate, gross_margin):
     """
-    Calculate Critical ROAS (Break Even ROAS).
-    Formula: (1 + VAT) / GrossMargin.
+    Calculate Critical ROAS = Break-Even ROAS + 20% safety buffer.
+    Formula: ((1 + VAT) / GrossMargin) * 1.2
     
-    Derivation:
+    Break-Even derivation:
     Profit = (Revenue / (1+VAT)) * Margin - Cost.
-    At Break Even, Profit = 0.
-    Cost = (Revenue / (1+VAT)) * Margin.
-    ROAS = Revenue / Cost = Revenue / ((Revenue / (1+VAT)) * Margin) = (1+VAT) / Margin.
+    At Break Even, Profit = 0  →  ROAS = (1+VAT) / Margin.
+    
+    The 20% buffer protects against Meta Ads CPA fluctuations (typically 15-25% daily).
+    Below Critical ROAS, ad sets risk becoming unprofitable.
     """
     if gross_margin <= 0:
         return 0.0
-    return (1 + vat_rate) / gross_margin
+    break_even = (1 + vat_rate) / gross_margin
+    return break_even * 1.2
 
 
 def calculate_scaling_roas(vat_rate, gross_margin):
     """
-    Calculate Scaling ROAS (Target for profitable scaling).
-    Formula: Critical ROAS * 1.2 (for 20% profit buffer).
+    Calculate Scaling ROAS = Critical ROAS * 1.4.
+    
+    When actual ROAS exceeds Scaling ROAS, the ad set is over-performing.
+    You can lower the ROAS target to trade some efficiency for more scale.
+    The 1.4x multiplier ensures clear separation from Critical ROAS.
     """
     critical_roas = calculate_critical_roas(vat_rate, gross_margin)
-    return critical_roas * 1.2
+    return critical_roas * 1.4
 
 
 def calculate_arpiv(item_revenue, items_viewed):
