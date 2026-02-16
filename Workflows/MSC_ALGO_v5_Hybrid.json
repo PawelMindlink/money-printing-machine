@@ -474,7 +474,7 @@
                 "url": "https://mindlink-n8n.ironcode.io/webhook/enrichment-trigger",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ brand: $node[\"Parse Form\"].json.brand }) }}",
+                "jsonBody": "={{ JSON.stringify({ brand: $('Parse Form').first().json.brand }) }}",
                 "options": {
                     "timeout": 10000
                 }

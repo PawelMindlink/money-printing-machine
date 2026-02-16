@@ -10,7 +10,7 @@
                 250,
                 200
             ],
-            "notes": "Manual run: scans Output/ for all brands via Discover Brands"
+            "notes": "Manual run: scans Output/ for all brands"
         },
         {
             "id": "enrich-webhook",
@@ -28,7 +28,7 @@
                 "responseMode": "onReceived",
                 "options": {}
             },
-            "notes": "Receives {brand: 'X'} from MSC-ALGO → goes directly to Load Config (skips discovery)"
+            "notes": "POST {brand:'X'} from MSC-ALGO"
         },
         {
             "id": "enrich-extract-brand",
@@ -40,23 +40,21 @@
                 450
             ],
             "parameters": {
-                "jsCode": "// Extract brand from MSC-ALGO webhook payload\nconst body = $input.first().json.body || $input.first().json;\nconst brand = body.brand || body.Brand;\n\nif (!brand) {\n  throw new Error('Webhook must POST {brand: \"Name\"}. Received: ' + JSON.stringify(body));\n}\n\nreturn [{ json: { brand } }];"
-            },
-            "notes": "Extracts brand from webhook POST body and passes to Load Config"
+                "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst brand = body.brand || body.Brand;\n\nif (!brand) {\n  throw new Error('Webhook must POST {brand: \"Name\"}');\n}\n\nreturn [{ json: { brand } }];"
+            }
         },
         {
-            "id": "enrich-set-brand",
+            "id": "enrich-discover",
             "name": "Discover Brands",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
                 450,
-                300
+                200
             ],
             "parameters": {
-                "jsCode": "// AUTO-DISCOVERY: Detect brands from MSC-ALGO output files.\\n// Scans Output/*/ for *_Growth_Opportunities.csv\\n// No manual brand input needed — synced with MSC-ALGO.\\nconst fs = require('fs');\\nconst path = require('path');\\n\\nconst projectRoot = process.env.PROJECT_ROOT || 'c:/Users/Paweł/Documents/GitHub/Money Printing Machine';\\nconst outputDir = path.join(projectRoot, 'Output');\\n\\nconst brands = [];\\ntry {\\n  const dirs = fs.readdirSync(outputDir, { withFileTypes: true });\\n  for (const dir of dirs) {\\n    if (!dir.isDirectory()) continue;\\n    const brandName = dir.name;\\n    const csvPath = path.join(outputDir, brandName, `${brandName}_Growth_Opportunities.csv`);\\n    if (fs.existsSync(csvPath)) {\\n      brands.push({ json: { brand: brandName } });\\n    }\\n  }\\n} catch (e) {\\n  throw new Error(`Cannot scan Output directory: ${e.message}`);\\n}\\n\\nif (brands.length === 0) {\\n  throw new Error('No brands found. Run MSC-ALGO first to generate Growth_Opportunities.csv files.');\\n}\\n\\nreturn brands;"
-            },
-            "notes": "AUTO-DISCOVERY: Scans Output/ for MSC-ALGO results. No manual brand config — always synced."
+                "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nconst projectRoot = process.env.PROJECT_ROOT || 'c:/Users/Paweł/Documents/GitHub/Money Printing Machine';\nconst outputDir = path.join(projectRoot, 'Output');\n\nconst brands = [];\nconst dirs = fs.readdirSync(outputDir, { withFileTypes: true });\nfor (const dir of dirs) {\n  if (!dir.isDirectory()) continue;\n  const brandName = dir.name;\n  const csvPath = path.join(outputDir, brandName, brandName + '_Growth_Opportunities.csv');\n  if (fs.existsSync(csvPath)) {\n    brands.push({ json: { brand: brandName } });\n  }\n}\n\nif (brands.length === 0) {\n  throw new Error('No brands found. Run MSC-ALGO first.');\n}\n\nreturn brands;"
+            }
         },
         {
             "id": "enrich-config",
@@ -68,9 +66,8 @@
                 300
             ],
             "parameters": {
-                "jsCode": "// UNIVERSAL: Resolve all paths from brand name (no hardcoded values)\nconst fs = require('fs');\nconst path = require('path');\n\nconst brand = $input.first().json.brand;\nif (!brand) throw new Error('No brand specified. Set Brand node must provide { brand: \"Name\" }');\n\n// Auto-detect project root from known workflow location\n// Works on any machine: Render, local Windows, CI\nconst projectRoot = process.env.PROJECT_ROOT || 'c:/Users/Paweł/Documents/GitHub/Money Printing Machine';\n\n// Universal path conventions:\n// Input:  Input/{Brand}/{brand_lower}_product_feed.xml\n// Output: Output/{Brand}/{Brand}_Growth_Opportunities.csv\n// Cache:  cache/enrichment/{brand_lower}/\nconst csvPath = path.join(projectRoot, 'Output', brand, `${brand}_Growth_Opportunities.csv`);\nconst feedPath = path.join(projectRoot, 'Input', brand, `${brand.toLowerCase()}_product_feed.xml`);\nconst cacheDir = path.join(projectRoot, 'cache', 'enrichment', brand.toLowerCase());\nconst configPath = path.join(projectRoot, 'business_logic.json');\n\n// Validate CSV exists\nif (!fs.existsSync(csvPath)) {\n  throw new Error(`MSC-ALGO output not found: ${csvPath}. Run MSC-ALGO for ${brand} first.`);\n}\n\n// Load business_logic.json\nlet config = {};\ntry {\n  config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));\n} catch (e) { /* optional */ }\n\n// Ensure brand-specific cache dir exists\nif (!fs.existsSync(cacheDir)) {\n  fs.mkdirSync(cacheDir, { recursive: true });\n}\n\nreturn [{\n  json: {\n    brand,\n    projectRoot,\n    csvPath,\n    feedPath: fs.existsSync(feedPath) ? feedPath : '',\n    cacheDir,\n    config: config[brand] || config[brand.toLowerCase()] || {},\n    timestamp: new Date().toISOString()\n  }\n}];"
-            },
-            "notes": "Phase 1: UNIVERSAL config resolver. Reads brand from upstream, validates paths exist."
+                "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nconst brand = $input.first().json.brand;\nif (!brand) throw new Error('No brand specified');\n\nconst projectRoot = process.env.PROJECT_ROOT || 'c:/Users/Paweł/Documents/GitHub/Money Printing Machine';\nconst csvPath = path.join(projectRoot, 'Output', brand, brand + '_Growth_Opportunities.csv');\nconst cacheDir = path.join(projectRoot, 'cache', 'enrichment', brand.toLowerCase());\nconst configPath = path.join(projectRoot, 'business_logic.json');\n\nif (!fs.existsSync(csvPath)) {\n  throw new Error('CSV not found: ' + csvPath);\n}\n\nlet config = {};\ntry { config = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch (e) {}\n\nif (!fs.existsSync(cacheDir)) {\n  fs.mkdirSync(cacheDir, { recursive: true });\n}\n\nreturn [{\n  json: {\n    brand,\n    projectRoot,\n    csvPath,\n    cacheDir,\n    config: config[brand] || config[brand.toLowerCase()] || {},\n    timestamp: new Date().toISOString()\n  }\n}];"
+            }
         },
         {
             "id": "enrich-read-csv",
@@ -82,9 +79,8 @@
                 300
             ],
             "parameters": {
-                "jsCode": "// Read Growth_Opportunities.csv and emit rows as items\nconst fs = require('fs');\nconst config = $input.first().json;\n\nif (!fs.existsSync(config.csvPath)) {\n  throw new Error(`CSV not found: ${config.csvPath}`);\n}\n\nconst raw = fs.readFileSync(config.csvPath, 'utf-8');\nconst lines = raw.split('\\n').filter(l => l.trim());\nconst headers = lines[0].split(',').map(h => h.trim().replace(/^\"|\"$/g, ''));\n\nconst items = [];\nfor (let i = 1; i < lines.length; i++) {\n  // Simple CSV parse (handles quoted fields)\n  const values = [];\n  let current = '';\n  let inQuotes = false;\n  for (const ch of lines[i]) {\n    if (ch === '\"') { inQuotes = !inQuotes; }\n    else if (ch === ',' && !inQuotes) { values.push(current.trim()); current = ''; }\n    else { current += ch; }\n  }\n  values.push(current.trim());\n\n  const row = {};\n  headers.forEach((h, idx) => {\n    row[h] = values[idx] || '';\n  });\n\n  // Carry config forward\n  row._brand = config.brand;\n  row._projectRoot = config.projectRoot;\n  row._cacheDir = config.cacheDir;\n  row._feedPath = config.feedPath;\n\n  items.push({ json: row });\n}\n\nreturn items;"
-            },
-            "notes": "Phase 1: Parse CSV into individual items. Each item = one product row + config metadata"
+                "jsCode": "const fs = require('fs');\nconst config = $input.first().json;\n\nconst raw = fs.readFileSync(config.csvPath, 'utf-8');\nconst lines = raw.split('\\n').filter(l => l.trim());\nconst headers = lines[0].split(',').map(h => h.trim().replace(/^\"|\"$/g, ''));\n\nconst items = [];\nfor (let i = 1; i < lines.length; i++) {\n  const values = [];\n  let current = '';\n  let inQuotes = false;\n  for (const ch of lines[i]) {\n    if (ch === '\"') { inQuotes = !inQuotes; }\n    else if (ch === ',' && !inQuotes) { values.push(current.trim()); current = ''; }\n    else { current += ch; }\n  }\n  values.push(current.trim());\n\n  const row = {};\n  headers.forEach((h, idx) => { row[h] = values[idx] || ''; });\n  row._brand = config.brand;\n  row._projectRoot = config.projectRoot;\n  row._cacheDir = config.cacheDir;\n  items.push({ json: row });\n}\n\nreturn items;"
+            }
         },
         {
             "id": "enrich-filter",
@@ -104,7 +100,7 @@
                     },
                     "conditions": [
                         {
-                            "id": "filter-actionable",
+                            "id": "f1",
                             "leftValue": "={{ $json.calc_is_actionable }}",
                             "rightValue": "True",
                             "operator": {
@@ -115,8 +111,7 @@
                     ],
                     "combinator": "and"
                 }
-            },
-            "notes": "Phase 1: Only process products marked as actionable by MSC-ALGO"
+            }
         },
         {
             "id": "enrich-batch",
@@ -130,8 +125,7 @@
             "parameters": {
                 "batchSize": 5,
                 "options": {}
-            },
-            "notes": "Phase 1: Process 5 products at a time (rate-limit friendly for Perplexity)"
+            }
         },
         {
             "id": "enrich-cache-check",
@@ -143,9 +137,8 @@
                 200
             ],
             "parameters": {
-                "jsCode": "// Check if product has fresh cache entry (< 7 days old)\nconst fs = require('fs');\nconst crypto = require('crypto');\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  const productId = d.feed_id || '';\n  const price = parseFloat(d.feed_price_numeric) || 0;\n  const category = d.feed_category || '';\n\n  // Hash: product_id + price + category\n  const raw = `${productId}|${price.toFixed(2)}|${category}`;\n  const key = crypto.createHash('sha256').update(raw).digest('hex').substring(0, 16);\n  const cachePath = `${d._cacheDir}/${key}.json`;\n\n  let cacheHit = false;\n  let cachedData = null;\n\n  try {\n    if (fs.existsSync(cachePath)) {\n      const entry = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));\n      const harvestDate = new Date(entry.harvest_date);\n      const age = (Date.now() - harvestDate.getTime()) / (1000 * 60 * 60 * 24);\n      if (age < 7) {\n        cacheHit = true;\n        cachedData = entry.data;\n      }\n    }\n  } catch (e) {\n    // Cache miss on error\n  }\n\n  results.push({\n    json: {\n      ...d,\n      _cacheKey: key,\n      _cachePath: cachePath,\n      _cacheHit: cacheHit,\n      ...(cachedData || {})\n    }\n  });\n}\n\nreturn results;"
-            },
-            "notes": "Phase 1: Hash-based cache check. Sets _cacheHit=true/false for routing"
+                "jsCode": "const fs = require('fs');\nconst crypto = require('crypto');\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  const raw = (d.feed_id || '') + '|' + (parseFloat(d.feed_price_numeric) || 0).toFixed(2) + '|' + (d.feed_category || '');\n  const key = crypto.createHash('sha256').update(raw).digest('hex').substring(0, 16);\n  const cachePath = d._cacheDir + '/' + key + '.json';\n\n  let cacheHit = false;\n  let cachedData = null;\n\n  try {\n    if (fs.existsSync(cachePath)) {\n      const entry = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));\n      const age = (Date.now() - new Date(entry.harvest_date).getTime()) / (1000 * 60 * 60 * 24);\n      if (age < 7) { cacheHit = true; cachedData = entry.data; }\n    }\n  } catch (e) {}\n\n  results.push({\n    json: { ...d, _cacheKey: key, _cachePath: cachePath, _cacheHit: cacheHit, ...(cachedData || {}) }\n  });\n}\n\nreturn results;"
+            }
         },
         {
             "id": "enrich-cache-router",
@@ -165,19 +158,18 @@
                     },
                     "conditions": [
                         {
-                            "id": "cache-hit",
+                            "id": "c1",
                             "leftValue": "={{ $json._cacheHit }}",
-                            "rightValue": "true",
+                            "rightValue": true,
                             "operator": {
-                                "type": "string",
-                                "operation": "equals"
+                                "type": "boolean",
+                                "operation": "true"
                             }
                         }
                     ],
                     "combinator": "and"
                 }
-            },
-            "notes": "Phase 1: Route cached products to skip harvesting"
+            }
         },
         {
             "id": "enrich-collect-cached",
@@ -189,27 +181,41 @@
                 100
             ],
             "parameters": {
-                "jsCode": "// Cached products already have enrichment data — pass through\nconst items = $input.all();\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    _source: 'cache'\n  }\n}));"
-            },
-            "notes": "Phase 1: Cached products pass through unchanged"
+                "jsCode": "const items = $input.all();\nreturn items.map(item => ({ json: { ...item.json, _source: 'cache' } }));"
+            }
         },
         {
-            "id": "enrich-perplexity-reviews",
-            "name": "Perplexity: Reviews",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
+            "id": "enrich-prep-reviews",
+            "name": "Prep Perplexity Reviews",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
                 1850,
                 300
             ],
             "parameters": {
+                "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  const query = 'Znajdz opinie i recenzje uzytkow o produkcie: ' + (d.feed_title || '') + '. Szukam pozytywnych cytatow i doswiadczen.';\n  \n  results.push({\n    json: {\n      ...d,\n      _perplexity_body_reviews: JSON.stringify({\n        model: 'sonar',\n        messages: [{ role: 'user', content: query }]\n      })\n    }\n  });\n}\n\nreturn results;"
+            }
+        },
+        {
+            "id": "enrich-call-reviews",
+            "name": "Call Perplexity: Reviews",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                2050,
+                300
+            ],
+            "parameters": {
                 "method": "POST",
                 "url": "https://api.perplexity.ai/chat/completions",
-                "authentication": "genericCredentialType",
-                "genericAuthType": "httpHeaderAuth",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "=Bearer {{ $env.PERPLEXITY_API_KEY }}"
+                        },
                         {
                             "name": "Content-Type",
                             "value": "application/json"
@@ -217,31 +223,46 @@
                     ]
                 },
                 "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={\n  \"model\": \"sonar\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Jesteś researcherem internetowym. Zwracasz tylko fakty i cytaty z wiarygodnych źródeł. Odpowiadaj po polsku.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Znajdź opinie, recenzje i komentarze użytkowników o produkcie: {{ $json.feed_title }}. Szukam POZYTYWNYCH cytatów, doświadczeń, i konkretnych opinii. Jeśli nie znajdziesz informacji o tym konkretnym produkcie, napisz: Brak danych.\"\n    }\n  ]\n}",
+                "specifyBody": "string",
+                "body": "={{ $json._perplexity_body_reviews }}",
                 "options": {
                     "timeout": 30000
                 }
             },
-            "notes": "Phase 2: Stream 1 — Product-specific reviews via Perplexity"
+            "notes": "Phase 2: Perplexity API for product reviews"
         },
         {
-            "id": "enrich-perplexity-category",
-            "name": "Perplexity: Category",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
+            "id": "enrich-prep-category",
+            "name": "Prep Perplexity Category",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
                 1850,
                 500
             ],
             "parameters": {
+                "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  const query = 'Kategoria: ' + (d.feed_category || '') + '. Czego ludzie szukaja kupujac takie produkty? Jakie maja obawy? Co ich zaskakuje?';\n  \n  results.push({\n    json: {\n      ...d,\n      _perplexity_body_category: JSON.stringify({\n        model: 'sonar',\n        messages: [{ role: 'user', content: query }]\n      })\n    }\n  });\n}\n\nreturn results;"
+            }
+        },
+        {
+            "id": "enrich-call-category",
+            "name": "Call Perplexity: Category",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                2050,
+                500
+            ],
+            "parameters": {
                 "method": "POST",
                 "url": "https://api.perplexity.ai/chat/completions",
-                "authentication": "genericCredentialType",
-                "genericAuthType": "httpHeaderAuth",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "=Bearer {{ $env.PERPLEXITY_API_KEY }}"
+                        },
                         {
                             "name": "Content-Type",
                             "value": "application/json"
@@ -249,28 +270,13 @@
                     ]
                 },
                 "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={\n  \"model\": \"sonar\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Jesteś researcherem internetowym. Zwracasz tylko fakty i cytaty z wiarygodnych źródeł. Odpowiadaj po polsku.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Kategoria produktowa: {{ $json.feed_category }}. Znajdź w internecie: 1. Czego ludzie szukają / oczekują kupując produkty z tej kategorii (marzenia, cele) 2. Jakie mają obawy, problemy i frustracje związane z produktami z tej kategorii 3. Co ich zaskakuje (pozytywnie lub negatywnie). Podaj konkretne przykłady z forów i opinii.\"\n    }\n  ]\n}",
+                "specifyBody": "string",
+                "body": "={{ $json._perplexity_body_category }}",
                 "options": {
                     "timeout": 30000
                 }
             },
-            "notes": "Phase 2: Stream 2 — Category-level psychology via Perplexity"
-        },
-        {
-            "id": "enrich-merge-harvest",
-            "name": "Merge Harvest",
-            "type": "n8n-nodes-base.merge",
-            "typeVersion": 3,
-            "position": [
-                2050,
-                400
-            ],
-            "parameters": {
-                "mode": "combine",
-                "combinationMode": "mergeByPosition"
-            },
-            "notes": "Phase 2: Combine product reviews + category insights into single item"
+            "notes": "Phase 2: Perplexity API for category insights"
         },
         {
             "id": "enrich-extract-harvest",
@@ -282,17 +288,29 @@
                 400
             ],
             "parameters": {
-                "jsCode": "// Extract text from Perplexity responses and attach to product data\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  \n  // Perplexity response structure: choices[0].message.content\n  const reviewsResponse = d.choices?.[0]?.message?.content || '';\n  \n  // Get the original product data from the input that fed into the HTTP nodes\n  // We need to reconstruct from the merge\n  results.push({\n    json: {\n      ...d,\n      _product_reviews: reviewsResponse,\n      _category_insights: '', // Will be filled from second input\n      _source: 'perplexity'\n    }\n  });\n}\n\nreturn results;"
-            },
-            "notes": "Phase 2: Parse Perplexity JSON responses into text fields"
+                "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  \n  // Extract text from Perplexity response\n  let reviews = '';\n  let category = '';\n  \n  if (d._reviews_response) {\n    try {\n      const r = typeof d._reviews_response === 'string' ? JSON.parse(d._reviews_response) : d._reviews_response;\n      reviews = r.choices?.[0]?.message?.content || '';\n    } catch (e) { reviews = String(d._reviews_response); }\n  }\n  \n  if (d._category_response) {\n    try {\n      const c = typeof d._category_response === 'string' ? JSON.parse(d._category_response) : d._category_response;\n      category = c.choices?.[0]?.message?.content || '';\n    } catch (e) { category = String(d._category_response); }\n  }\n  \n  results.push({\n    json: {\n      ...d,\n      _product_reviews: reviews.substring(0, 2000),\n      _category_insights: category.substring(0, 2000)\n    }\n  });\n}\n\nreturn results;"
+            }
         },
         {
-            "id": "enrich-claude-analyze",
+            "id": "enrich-prep-claude",
+            "name": "Prepare Claude Prompt",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                2450,
+                400
+            ],
+            "parameters": {
+                "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  const prompt = 'ACT AS Consumer Psychologist. Create psychographic profile for: ' + (d.feed_title || '') + ' (Category: ' + (d.feed_category || '') + ').\\n\\nREVIEWS:\\n' + (d._product_reviews || 'No data') + '\\n\\nCATEGORY INSIGHTS:\\n' + (d._category_insights || 'No data') + '\\n\\nReturn ONLY valid JSON with these 9 keys:\\n{\"persona_name\":\"One-word persona label\",\"persona_dream\":\"#1 dream outcome\",\"persona_fear\":\"#1 fear/pain\",\"persona_awareness\":\"unaware|problem_aware|solution_aware|product_aware\",\"tech_translator\":\"Feature->Benefit pairs\",\"social_proof_quote\":\"2-3 strongest quotes\",\"competitive_edge\":\"What makes this product better\",\"visual_hook_suggestion\":\"For Meta Ad: what to zoom/highlight\",\"buying_objections\":\"Top 2-3 hesitations\"}\\nPolish language. Emotional, copywriter-ready. NO HALLUCINATIONS.';\n  \n  results.push({\n    json: {\n      ...d,\n      _claude_messages: JSON.stringify([{ role: 'user', content: prompt }])\n    }\n  });\n}\n\nreturn results;"
+            }
+        },
+        {
+            "id": "enrich-call-claude",
             "name": "Claude: Analyze",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                2450,
+                2650,
                 400
             ],
             "parameters": {
@@ -302,45 +320,31 @@
                 "headerParameters": {
                     "parameters": [
                         {
-                            "name": "Content-Type",
-                            "value": "application/json"
-                        },
-                        {
                             "name": "x-api-key",
                             "value": "={{ $env.ANTHROPIC_API_KEY }}"
                         },
                         {
                             "name": "anthropic-version",
                             "value": "2023-06-01"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
                         }
                     ]
                 },
                 "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={\n  \"model\": \"claude-sonnet-4-5-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"ACT AS: Consumer Psychologist & E-commerce Strategist.\\nTASK: Create a psychographic profile for product: '{{ $json.feed_title }}' (Category: {{ $json.feed_category }}).\\n\\n[SOURCE A: PRODUCT REVIEWS]\\n{{ $json._product_reviews }}\\n\\n[SOURCE B: CATEGORY INSIGHTS]\\n{{ $json._category_insights }}\\n\\nOUTPUT FORMAT: Return ONLY valid JSON:\\n{\\n  \\\"persona_name\\\": \\\"One-word persona label (e.g. Pro Gamer, Budget Hunter)\\\",\\n  \\\"persona_dream\\\": \\\"#1 Dream Outcome for this persona\\\",\\n  \\\"persona_fear\\\": \\\"#1 Fear/Pain Point\\\",\\n  \\\"persona_awareness\\\": \\\"unaware|problem_aware|solution_aware|product_aware\\\",\\n  \\\"tech_translator\\\": \\\"Feature -> Benefit pairs separated by |. Use specs from product title.\\\",\\n  \\\"social_proof_quote\\\": \\\"2-3 strongest positive quotes from Source A\\\",\\n  \\\"competitive_edge\\\": \\\"What makes THIS product better than alternatives\\\",\\n  \\\"visual_hook_suggestion\\\": \\\"For Meta Ad designer: what feature to zoom/circle/contrast\\\",\\n  \\\"buying_objections\\\": \\\"Top 2-3 hesitation reasons\\\"\\n}\\n\\nRULES: NO HALLUCINATIONS. Polish language. Emotional, copywriter-ready.\"\n    }\n  ]\n}",
+                "specifyBody": "string",
+                "body": "={{ JSON.stringify({ model: 'claude-sonnet-4-5-20250514', max_tokens: 2048, messages: JSON.parse($json._claude_messages) }) }}",
                 "options": {
                     "timeout": 60000
                 }
             },
-            "notes": "Phase 3: Claude Sonnet synthesizes harvest data into 10 psychographic columns"
+            "notes": "Phase 3: Claude Sonnet analyzes harvested insights"
         },
         {
-            "id": "enrich-parse-analysis",
+            "id": "enrich-parse",
             "name": "Parse Analysis",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                2650,
-                400
-            ],
-            "parameters": {
-                "jsCode": "// Parse Claude response and merge enrichment data into product row\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  \n  // Claude response: content[0].text\n  let analysisText = d.content?.[0]?.text || '';\n  \n  // Parse JSON from response\n  let analysis = {};\n  try {\n    // Clean markdown fences\n    analysisText = analysisText.replace(/```json/g, '').replace(/```/g, '').trim();\n    analysis = JSON.parse(analysisText);\n  } catch (e) {\n    // Fallback: extract first JSON object\n    try {\n      const start = analysisText.indexOf('{');\n      const end = analysisText.lastIndexOf('}');\n      if (start !== -1 && end > start) {\n        analysis = JSON.parse(analysisText.substring(start, end + 1));\n      }\n    } catch (e2) {\n      // Give up — empty analysis\n    }\n  }\n  \n  // Quality gate: at least 3 fields filled\n  const filled = Object.values(analysis).filter(v => v && v.length > 0).length;\n  const qualityOk = filled >= 3;\n  \n  results.push({\n    json: {\n      ...d,\n      persona_name: analysis.persona_name || '',\n      persona_dream: analysis.persona_dream || '',\n      persona_fear: analysis.persona_fear || '',\n      persona_awareness: analysis.persona_awareness || '',\n      tech_translator: analysis.tech_translator || '',\n      social_proof_quote: analysis.social_proof_quote || '',\n      competitive_edge: analysis.competitive_edge || '',\n      visual_hook_suggestion: analysis.visual_hook_suggestion || '',\n      buying_objections: analysis.buying_objections || '',\n      harvest_date: new Date().toISOString().split('T')[0],\n      _quality_ok: qualityOk,\n      _quality_filled: filled,\n      _source: 'fresh'\n    }\n  });\n}\n\nreturn results;"
-            },
-            "notes": "Phase 3: Parse Claude JSON, apply quality gate (≥3 fields), merge into product row"
-        },
-        {
-            "id": "enrich-update-cache",
-            "name": "Update Cache",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
@@ -348,9 +352,21 @@
                 400
             ],
             "parameters": {
-                "jsCode": "// Write enrichment result to cache file\nconst fs = require('fs');\n\nconst items = $input.all();\n\nfor (const item of items) {\n  const d = item.json;\n  if (d._cacheHit) continue; // Don't re-cache cached items\n  \n  const cacheEntry = {\n    product_id: d.feed_id,\n    harvest_date: new Date().toISOString(),\n    data: {\n      persona_name: d.persona_name || '',\n      persona_dream: d.persona_dream || '',\n      persona_fear: d.persona_fear || '',\n      persona_awareness: d.persona_awareness || '',\n      tech_translator: d.tech_translator || '',\n      social_proof_quote: d.social_proof_quote || '',\n      competitive_edge: d.competitive_edge || '',\n      visual_hook_suggestion: d.visual_hook_suggestion || '',\n      buying_objections: d.buying_objections || '',\n      harvest_date: d.harvest_date || ''\n    }\n  };\n  \n  try {\n    fs.writeFileSync(d._cachePath, JSON.stringify(cacheEntry, null, 2), 'utf-8');\n  } catch (e) {\n    // Cache write failure is non-fatal\n  }\n}\n\nreturn items;"
-            },
-            "notes": "Phase 3: Write fresh results to cache for future runs"
+                "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  \n  let text = '';\n  try {\n    const resp = typeof d._claude_response === 'string' ? JSON.parse(d._claude_response) : d._claude_response;\n    text = resp?.content?.[0]?.text || '';\n  } catch (e) { text = String(d._claude_response || ''); }\n  \n  let analysis = {};\n  try {\n    text = text.replace(/```json/g, '').replace(/```/g, '').trim();\n    analysis = JSON.parse(text);\n  } catch (e) {\n    try {\n      const s = text.indexOf('{');\n      const e2 = text.lastIndexOf('}');\n      if (s !== -1 && e2 > s) analysis = JSON.parse(text.substring(s, e2 + 1));\n    } catch (e3) {}\n  }\n\n  results.push({\n    json: {\n      ...d,\n      persona_name: analysis.persona_name || '',\n      persona_dream: analysis.persona_dream || '',\n      persona_fear: analysis.persona_fear || '',\n      persona_awareness: analysis.persona_awareness || '',\n      tech_translator: analysis.tech_translator || '',\n      social_proof_quote: analysis.social_proof_quote || '',\n      competitive_edge: analysis.competitive_edge || '',\n      visual_hook_suggestion: analysis.visual_hook_suggestion || '',\n      buying_objections: analysis.buying_objections || '',\n      harvest_date: new Date().toISOString().split('T')[0],\n      _source: 'fresh'\n    }\n  });\n}\n\nreturn results;"
+            }
+        },
+        {
+            "id": "enrich-update-cache",
+            "name": "Update Cache",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                3050,
+                400
+            ],
+            "parameters": {
+                "jsCode": "const fs = require('fs');\nconst items = $input.all();\n\nfor (const item of items) {\n  const d = item.json;\n  if (d._cacheHit) continue;\n  \n  const entry = {\n    product_id: d.feed_id,\n    harvest_date: new Date().toISOString(),\n    data: {\n      persona_name: d.persona_name || '',\n      persona_dream: d.persona_dream || '',\n      persona_fear: d.persona_fear || '',\n      persona_awareness: d.persona_awareness || '',\n      tech_translator: d.tech_translator || '',\n      social_proof_quote: d.social_proof_quote || '',\n      competitive_edge: d.competitive_edge || '',\n      visual_hook_suggestion: d.visual_hook_suggestion || '',\n      buying_objections: d.buying_objections || '',\n      harvest_date: d.harvest_date || ''\n    }\n  };\n  \n  try { fs.writeFileSync(d._cachePath, JSON.stringify(entry, null, 2), 'utf-8'); } catch (e) {}\n}\n\nreturn items;"
+            }
         },
         {
             "id": "enrich-merge-all",
@@ -358,13 +374,12 @@
             "type": "n8n-nodes-base.merge",
             "typeVersion": 3,
             "position": [
-                3050,
+                3250,
                 250
             ],
             "parameters": {
                 "mode": "append"
-            },
-            "notes": "Phase 4: Combine cached + freshly enriched products"
+            }
         },
         {
             "id": "enrich-write-csv",
@@ -372,13 +387,12 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                3250,
+                3450,
                 250
             ],
             "parameters": {
-                "jsCode": "// Write final Enriched_Products.csv\nconst fs = require('fs');\nconst path = require('path');\n\nconst items = $input.all();\nif (items.length === 0) {\n  return [{ json: { status: 'no_items', message: 'No products to write' } }];\n}\n\n// Define output columns (34 quant + 10 qual)\nconst skipCols = ['_brand', '_projectRoot', '_cacheDir', '_feedPath', '_cacheKey', '_cachePath', '_cacheHit', '_source', '_quality_ok', '_quality_filled', '_product_reviews', '_category_insights'];\nconst allKeys = Object.keys(items[0].json).filter(k => !skipCols.includes(k));\n\n// Build CSV\nconst header = allKeys.join(',');\nconst rows = items.map(item => {\n  return allKeys.map(k => {\n    let v = item.json[k] || '';\n    v = String(v).replace(/\"/g, '\"\"');\n    return `\"${v}\"`;\n  }).join(',');\n});\n\nconst csv = [header, ...rows].join('\\n');\n\n// Get output path from first item\nconst brand = items[0].json._brand || 'Unknown';\nconst projectRoot = items[0].json._projectRoot || '.';\nconst outputPath = path.join(projectRoot, 'Output', brand, `${brand}_Enriched_Products.csv`);\n\nfs.writeFileSync(outputPath, csv, 'utf-8');\n\nconst cached = items.filter(i => i.json._source === 'cache').length;\nconst fresh = items.filter(i => i.json._source !== 'cache').length;\n\nreturn [{\n  json: {\n    status: 'success',\n    outputPath,\n    totalProducts: items.length,\n    fromCache: cached,\n    freshlyEnriched: fresh,\n    columns: allKeys.length,\n    timestamp: new Date().toISOString()\n  }\n}];"
-            },
-            "notes": "Phase 4: Write final CSV (34 quant + 10 qual columns). Summary stats in output."
+                "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nconst items = $input.all();\nif (items.length === 0) return [{ json: { status: 'no_items' } }];\n\nconst skip = ['_brand','_projectRoot','_cacheDir','_cacheKey','_cachePath','_cacheHit','_source','_product_reviews','_category_insights','_reviews_response','_category_response','_claude_messages','_claude_response','_quality_ok','_quality_filled'];\nconst keys = Object.keys(items[0].json).filter(k => !skip.includes(k));\n\nconst header = keys.join(',');\nconst rows = items.map(item =>\n  keys.map(k => '\"' + String(item.json[k] || '').replace(/\"/g, '\"\"') + '\"').join(',')\n);\n\nconst csv = [header, ...rows].join('\\n');\nconst brand = items[0].json._brand || 'Unknown';\nconst root = items[0].json._projectRoot || '.';\nconst outPath = path.join(root, 'Output', brand, brand + '_Enriched_Products.csv');\nfs.writeFileSync(outPath, csv, 'utf-8');\n\nreturn [{ json: { status: 'success', outputPath: outPath, total: items.length, columns: keys.length } }];"
+            }
         },
         {
             "id": "enrich-error-trigger",
@@ -387,9 +401,9 @@
             "typeVersion": 1,
             "position": [
                 250,
-                600
+                650
             ],
-            "notes": "Phase 4: Catches any node failure"
+            "notes": "Only fires on real errors (shows example data when manually tested — this is normal n8n behavior)"
         },
         {
             "id": "enrich-error-log",
@@ -398,12 +412,11 @@
             "typeVersion": 2,
             "position": [
                 450,
-                600
+                650
             ],
             "parameters": {
-                "jsCode": "// Log error details\nconst error = $input.first().json;\nreturn [{\n  json: {\n    status: 'error',\n    workflow: error.workflow?.name || 'Enrichment Pipeline',\n    node: error.execution?.error?.node?.name || 'unknown',\n    message: error.execution?.error?.message || 'Unknown error',\n    timestamp: new Date().toISOString()\n  }\n}];"
-            },
-            "notes": "Phase 4: Log error details for debugging"
+                "jsCode": "const error = $input.first().json;\nreturn [{\n  json: {\n    status: 'error',\n    workflow: error.workflow?.name || 'Enrichment Pipeline',\n    node: error.execution?.error?.node?.name || 'unknown',\n    message: error.execution?.error?.message || 'Unknown error',\n    timestamp: new Date().toISOString()\n  }\n}];"
+            }
         }
     ],
     "connections": {
@@ -518,41 +531,63 @@
                 ],
                 [
                     {
-                        "node": "Perplexity: Reviews",
+                        "node": "Prep Perplexity Reviews",
                         "type": "main",
                         "index": 0
                     },
                     {
-                        "node": "Perplexity: Category",
+                        "node": "Prep Perplexity Category",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Perplexity: Reviews": {
+        "Collect Cached": {
             "main": [
                 [
                     {
-                        "node": "Merge Harvest",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Perplexity: Category": {
-            "main": [
-                [
-                    {
-                        "node": "Merge Harvest",
+                        "node": "Merge All Results",
                         "type": "main",
                         "index": 1
                     }
                 ]
             ]
         },
-        "Merge Harvest": {
+        "Prep Perplexity Reviews": {
+            "main": [
+                [
+                    {
+                        "node": "Call Perplexity: Reviews",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Call Perplexity: Reviews": {
+            "main": [
+                [
+                    {
+                        "node": "Extract Harvest Data",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prep Perplexity Category": {
+            "main": [
+                [
+                    {
+                        "node": "Call Perplexity: Category",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Call Perplexity: Category": {
             "main": [
                 [
                     {
@@ -564,6 +599,17 @@
             ]
         },
         "Extract Harvest Data": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Claude Prompt",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Claude Prompt": {
             "main": [
                 [
                     {
@@ -603,17 +649,6 @@
                         "node": "Merge All Results",
                         "type": "main",
                         "index": 0
-                    }
-                ]
-            ]
-        },
-        "Collect Cached": {
-            "main": [
-                [
-                    {
-                        "node": "Merge All Results",
-                        "type": "main",
-                        "index": 1
                     }
                 ]
             ]
