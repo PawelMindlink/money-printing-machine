@@ -207,7 +207,7 @@
                 "nodeCredentialType": "googleApi",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Validate Config'].json.DATE_FROM, endDate: $node['Validate Config'].json.DATE_TO }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'ecommercePurchases' }, { name: 'totalUsers' }, { name: 'firstTimePurchasers' }], orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: '1000' }) }}",
+                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: String($node['Validate Config'].json.DATE_FROM), endDate: String($node['Validate Config'].json.DATE_TO) }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'ecommercePurchases' }, { name: 'totalUsers' }, { name: 'firstTimePurchasers' }], orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: 1000 }) }}",
                 "options": {}
             },
             "id": "fetch-ga4-lp",
@@ -246,7 +246,7 @@
                 "nodeCredentialType": "googleApi",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Validate Config'].json.DATE_FROM, endDate: $node['Validate Config'].json.DATE_TO }], dimensions: [{ name: 'itemId' }], metrics: [{ name: 'itemsViewed' }, { name: 'itemRevenue' }, { name: 'itemsPurchased' }], limit: '10000' }) }}",
+                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: String($node['Validate Config'].json.DATE_FROM), endDate: String($node['Validate Config'].json.DATE_TO) }], dimensions: [{ name: 'itemId' }], metrics: [{ name: 'itemsViewed' }, { name: 'itemRevenue' }, { name: 'itemsPurchased' }], limit: 10000 }) }}",
                 "options": {}
             },
             "id": "fetch-ga4-items",
