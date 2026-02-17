@@ -220,7 +220,7 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
             subset_valid = subset[subset['price_numeric'] > 0].copy()
             if not subset_valid.empty:
                 clusters = bl.assign_price_cluster(subset_valid, price_col='price_numeric')
-                df.loc[subset_valid.index, 'calc_price_cluster'] = clusters
+                df.loc[subset_valid.index, 'calc_price_cluster'] = clusters.astype(str)
 
     # Cluster Stats → Bid/Cost Caps
     cluster_stats = []
