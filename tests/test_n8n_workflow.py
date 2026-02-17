@@ -106,8 +106,8 @@ class TestN8nWorkflowStructure(unittest.TestCase):
     # SANITY: Total nodes and connections
     # ------------------------------------------------------------------
     def test_total_nodes(self):
-        self.assertEqual(len(self.wf["nodes"]), 24,
-                         "Workflow should have 24 nodes (20 functional + 4 sticky notes)")
+        self.assertEqual(len(self.wf["nodes"]), 25,
+                         "Workflow should have 25 nodes (21 functional + 4 sticky notes)")
 
     def test_python_bridge_has_four_inputs(self):
         """Python Bridge should receive from all 4 normalize nodes."""

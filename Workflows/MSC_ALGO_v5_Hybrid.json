@@ -19,9 +19,8 @@
                             "requiredField": true
                         },
                         {
-                            "fieldLabel": "Feed URL (XML)",
-                            "placeholder": "https://example.com/feed.xml",
-                            "requiredField": true
+                            "fieldLabel": "Feed URL (XML) — opcjonalne, nadpisuje brand_config",
+                            "placeholder": "puste = z brand_config"
                         },
                         {
                             "fieldLabel": "Data Sheet URL (Google Sheets)",
@@ -60,7 +59,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// ============================================================\n// PARSE FORM (v2: VAT/Margin from brand_config, not form)\n// ============================================================\nconst form = $input.first().json;\n\nconst brandName = (form['Brand Name'] || '').trim();\nif (!brandName) throw new Error('Brand Name is required.');\n\nconst sheetUrl = form['Data Sheet URL (Google Sheets)'] || '';\nconst sheetIdMatch = sheetUrl.match(/\\/d\\/([a-zA-Z0-9_-]+)/);\nconst sheetId = sheetIdMatch ? sheetIdMatch[1] : '';\nif (!sheetId) throw new Error('Invalid Google Sheet URL.');\n\nconst now = new Date();\nconst y1ago = new Date(now);\ny1ago.setFullYear(y1ago.getFullYear() - 1);\n\nreturn [{ json: {\n  _brand_name: brandName,\n  _brand_key: brandName.toLowerCase(),\n  _feed_url: (form['Feed URL (XML)'] || '').trim(),\n  _sheet_id: sheetId,\n  _date_from: (form['Date From (YYYY-MM-DD)'] || '').trim() || y1ago.toISOString().split('T')[0],\n  _date_to: (form['Date To (YYYY-MM-DD)'] || '').trim() || now.toISOString().split('T')[0],\n  _form_ga4_id: (form['GA4 Property ID (opcjonalne)'] || '').trim(),\n  _form_meta_id: (form['Meta Account ID (opcjonalne)'] || '').trim()\n} }];"
+                "jsCode": "// ============================================================\n// PARSE FORM v3 — feed_url now optional (from brand_config)\n// ============================================================\nconst form = $input.first().json;\n\nconst brandName = (form['Brand Name'] || '').trim();\nif (!brandName) throw new Error('Brand Name is required.');\n\nconst sheetUrl = form['Data Sheet URL (Google Sheets)'] || '';\nconst sheetIdMatch = sheetUrl.match(/\\/d\\/([a-zA-Z0-9_-]+)/);\nconst sheetId = sheetIdMatch ? sheetIdMatch[1] : '';\nif (!sheetId) throw new Error('Invalid Google Sheet URL.');\n\nconst now = new Date();\nconst y1ago = new Date(now);\ny1ago.setFullYear(y1ago.getFullYear() - 1);\n\nreturn [{ json: {\n  _brand_name: brandName,\n  _brand_key: brandName.toLowerCase(),\n  _feed_url: (form['Feed URL (XML) — opcjonalne, nadpisuje brand_config'] || '').trim(),\n  _sheet_id: sheetId,\n  _date_from: (form['Date From (YYYY-MM-DD)'] || '').trim() || y1ago.toISOString().split('T')[0],\n  _date_to: (form['Date To (YYYY-MM-DD)'] || '').trim() || now.toISOString().split('T')[0],\n  _form_ga4_id: (form['GA4 Property ID (opcjonalne)'] || '').trim(),\n  _form_meta_id: (form['Meta Account ID (opcjonalne)'] || '').trim()\n} }];"
             },
             "id": "parse-form",
             "name": "Parse Form",
@@ -103,7 +102,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// ============================================================\n// BUILD CONFIG v3 — Single Source of Truth (brand_config)\n// VAT, Default Margin, and Currency come from brand_config.\n// ============================================================\n\nconst formData = $node['Parse Form'].json;\n\nconst HARDCODED = {\n  'iiyama':      { ga4: '280127077',  meta: 'act_1438113836305522' },\n  'bushido':     { ga4: '297192186',  meta: 'act_1930400651212132' },\n  'koszulkowy':  { ga4: '270928705',  meta: 'act_1897121353740892' },\n  'mindlink':    { ga4: '477769901',  meta: 'act_1578563932814949' }\n};\n\nconst sheetBrands = $input.all().map(i => i.json);\nconst sheetMatch = sheetBrands.find(row =>\n  (row.brand_name || '').toLowerCase().trim() === formData._brand_key\n);\n\n// VAT, DEFAULT_MARGIN, and CURRENCY from brand_config (Single Source of Truth)\nconst vatRate = sheetMatch ? (parseFloat(sheetMatch.vat_rate) || 0.23) : 0.23;\nconst defaultMargin = sheetMatch ? (parseFloat(sheetMatch.default_margin) || 0.10) : 0.10;\nconst currency = sheetMatch ? (sheetMatch.currency || 'PLN').toUpperCase().trim() : 'PLN';\n\nif (!sheetMatch) {\n  throw new Error(`Brand \"${formData._brand_name}\" not found in brand_config sheet. Add a row with brand_name=\"${formData._brand_name}\" first.`);\n}\n\nconst hardcoded = HARDCODED[formData._brand_key];\nconst ga4Id = formData._form_ga4_id\n           || (sheetMatch ? (sheetMatch.ga4_property_id || '') : '')\n           || (hardcoded ? hardcoded.ga4 : '');\nconst metaId = formData._form_meta_id\n            || (sheetMatch ? (sheetMatch.meta_account_id || '') : '')\n            || (hardcoded ? hardcoded.meta : '');\n\nif (!ga4Id) throw new Error(`GA4 Property ID missing for \"${formData._brand_name}\"`);\nif (!metaId) throw new Error(`Meta Account ID missing for \"${formData._brand_name}\"`);\n\nconst isNewBrand = !hardcoded && !sheetMatch;\n\nreturn [{ json: {\n  BRAND: formData._brand_name,\n  VAT_RATE: vatRate,\n  DEFAULT_MARGIN: defaultMargin,\n  CURRENCY: currency,\n  FEED_URL: formData._feed_url,\n  SHEET_ID: formData._sheet_id,\n  GA4_PROPERTY_ID: ga4Id,\n  META_ACCOUNT_ID: metaId,\n  DATE_FROM: formData._date_from,\n  DATE_TO: formData._date_to,\n  MSC_ALGO: { MIN_META_TRANS: 10, MIN_ORGANIC_SESSIONS: 300 },\n  _is_new_brand: isNewBrand\n} }];"
+                "jsCode": "// ============================================================\n// BUILD CONFIG v4 — feed_url from brand_config, form = override\n// ============================================================\n\nconst formData = $node['Parse Form'].json;\n\nconst HARDCODED = {\n  'iiyama':      { ga4: '280127077',  meta: 'act_1438113836305522' },\n  'bushido':     { ga4: '297192186',  meta: 'act_1930400651212132' },\n  'koszulkowy':  { ga4: '270928705',  meta: 'act_1897121353740892' },\n  'mindlink':    { ga4: '477769901',  meta: 'act_1578563932814949' }\n};\n\nconst sheetBrands = $input.all().map(i => i.json);\nconst sheetMatch = sheetBrands.find(row =>\n  (row.brand_name || '').toLowerCase().trim() === formData._brand_key\n);\n\nif (!sheetMatch) {\n  throw new Error(`❌ Brand \"${formData._brand_name}\" nie znaleziony w brand_config. Dodaj wiersz z brand_name=\"${formData._brand_name}\".`);\n}\n\nconst vatRate = parseFloat(sheetMatch.vat_rate) || 0.23;\n\nconst hardcoded = HARDCODED[formData._brand_key];\nconst ga4Id = formData._form_ga4_id\n           || String(sheetMatch.ga4_property_id || '')\n           || (hardcoded ? hardcoded.ga4 : '');\nconst metaId = formData._form_meta_id\n            || String(sheetMatch.meta_account_id || '')\n            || (hardcoded ? hardcoded.meta : '');\n\n// feed_url: form override → brand_config → error\nconst feedUrl = formData._feed_url\n             || (sheetMatch.feed_url || '').trim();\n\nreturn [{ json: {\n  BRAND: formData._brand_name,\n  VAT_RATE: vatRate,\n  FEED_URL: feedUrl,\n  SHEET_ID: formData._sheet_id,\n  GA4_PROPERTY_ID: String(ga4Id).replace(/\\.0$/, ''),\n  META_ACCOUNT_ID: String(metaId),\n  DATE_FROM: formData._date_from,\n  DATE_TO: formData._date_to,\n  MSC_ALGO: { MIN_META_TRANS: 10, MIN_ORGANIC_SESSIONS: 300 }\n} }];"
             },
             "id": "config-builder",
             "name": "Build Config",
@@ -189,7 +188,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// NORMALIZE FEED + MARGINS v3\n// FIX: g: namespace fields use bracket notation (p['g:id'] not p.g_id)\n// FIX: DEFAULT rule from margin_rules is used as fallback\n// ADD: feed_image_link extraction (Issue 2)\nconst config = $node['Margin Resolver'].json;\nconst marginRules = config.MARGIN_RULES || [];\nconst defaultMargin = config.DEFAULT_MARGIN || 0.10;\n\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  let u = url.toLowerCase().replace(/^https?:\\/\\/(www\\.)?/, '').split('?')[0].replace(/\\/$/, '');\n  return u;\n}\n\nfunction resolveMargin(feedId, feedCategory, feedTitle) {\n  const id = (feedId || '').trim();\n  const cat = (feedCategory || '').toLowerCase().trim();\n  const title = (feedTitle || '').toLowerCase().trim();\n  const searchStr = cat + ' ' + title;\n  for (const rule of marginRules) {\n    if (rule.match_type === 'SKU_EXACT' && id === rule.match_value) return rule.margin_rate;\n    if (rule.match_type === 'CATEGORY_EXACT' && cat === rule.match_value.toLowerCase()) return rule.margin_rate;\n    if (rule.match_type === 'KEYWORD' && searchStr.includes(rule.match_value.toLowerCase())) return rule.margin_rate;\n  }\n  return defaultMargin;\n}\n\nconst feedData = $input.first().json;\nlet products = [];\nif (feedData.rss?.channel?.item) products = [feedData.rss.channel.item].flat();\nelse if (feedData.feed?.entry) products = [feedData.feed.entry].flat();\nelse if (feedData.products?.product) products = [feedData.products.product].flat();\n\nreturn products.map(p => {\n  const id = p['g:id'] || p.g_id || p.id || '';\n  const cat = p['g:product_type'] || p['g:google_product_category'] || p.product_type || p.google_product_category || '';\n  const link = p['g:link'] || p.g_link || p.link || '';\n  const priceRaw = p['g:price'] || p.g_price || p.price || '0';\n  const title = p['g:title'] || p.g_title || p.title || '';\n  const brand = p['g:brand'] || p.g_brand || p.brand || '';\n  const imageLink = p['g:image_link'] || p.g_image_link || p.image_link || '';\n  \n  return { json: {\n    feed_id: id,\n    feed_title: title,\n    feed_brand: brand,\n    feed_price: parseFloat(String(priceRaw).replace(/[^0-9.]/g, '')) || 0,\n    feed_category: cat,\n    feed_link: link,\n    feed_image_link: imageLink,\n    norm_url_path: normalizeUrl(link).split('/').slice(1).join('/'),\n    base_gross_margin: resolveMargin(id, cat, title)\n  }};\n});"
+                "jsCode": "// NORMALIZE FEED + MARGINS v3\n// FIX: g: namespace fields use bracket notation (p['g:id'] not p.g_id)\n// FIX: DEFAULT rule from margin_rules is used as fallback\n// ADD: feed_image_link extraction (Issue 2)\nconst config = $node['Validate Config'].json;\nconst marginRules = config.MARGIN_RULES || [];\nconst defaultMargin = config.DEFAULT_MARGIN || 0.10;\n\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  let u = url.toLowerCase().replace(/^https?:\\/\\/(www\\.)?/, '').split('?')[0].replace(/\\/$/, '');\n  return u;\n}\n\nfunction resolveMargin(feedId, feedCategory, feedTitle) {\n  const id = (feedId || '').trim();\n  const cat = (feedCategory || '').toLowerCase().trim();\n  const title = (feedTitle || '').toLowerCase().trim();\n  const searchStr = cat + ' ' + title;\n  for (const rule of marginRules) {\n    if (rule.match_type === 'SKU_EXACT' && id === rule.match_value) return rule.margin_rate;\n    if (rule.match_type === 'CATEGORY_EXACT' && cat === rule.match_value.toLowerCase()) return rule.margin_rate;\n    if (rule.match_type === 'KEYWORD' && searchStr.includes(rule.match_value.toLowerCase())) return rule.margin_rate;\n  }\n  return defaultMargin;\n}\n\nconst feedData = $input.first().json;\nlet products = [];\nif (feedData.rss?.channel?.item) products = [feedData.rss.channel.item].flat();\nelse if (feedData.feed?.entry) products = [feedData.feed.entry].flat();\nelse if (feedData.products?.product) products = [feedData.products.product].flat();\n\nreturn products.map(p => {\n  const id = p['g:id'] || p.g_id || p.id || '';\n  const cat = p['g:product_type'] || p['g:google_product_category'] || p.product_type || p.google_product_category || '';\n  const link = p['g:link'] || p.g_link || p.link || '';\n  const priceRaw = p['g:price'] || p.g_price || p.price || '0';\n  const title = p['g:title'] || p.g_title || p.title || '';\n  const brand = p['g:brand'] || p.g_brand || p.brand || '';\n  const imageLink = p['g:image_link'] || p.g_image_link || p.image_link || '';\n  \n  return { json: {\n    feed_id: id,\n    feed_title: title,\n    feed_brand: brand,\n    feed_price: parseFloat(String(priceRaw).replace(/[^0-9.]/g, '')) || 0,\n    feed_category: cat,\n    feed_link: link,\n    feed_image_link: imageLink,\n    norm_url_path: normalizeUrl(link).split('/').slice(1).join('/'),\n    base_gross_margin: resolveMargin(id, cat, title)\n  }};\n});"
             },
             "id": "normalize-feed",
             "name": "Normalize Feed + Margins",
@@ -203,12 +202,12 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "={{ 'https://analyticsdata.googleapis.com/v1beta/properties/' + $node['Margin Resolver'].json.GA4_PROPERTY_ID + ':runReport' }}",
+                "url": "={{ 'https://analyticsdata.googleapis.com/v1beta/properties/' + $node['Validate Config'].json.GA4_PROPERTY_ID + ':runReport' }}",
                 "authentication": "predefinedCredentialType",
                 "nodeCredentialType": "googleApi",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'ecommercePurchases' }, { name: 'totalUsers' }, { name: 'firstTimePurchasers' }], orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: 1000 }) }}",
+                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Validate Config'].json.DATE_FROM, endDate: $node['Validate Config'].json.DATE_TO }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'ecommercePurchases' }, { name: 'totalUsers' }, { name: 'firstTimePurchasers' }], orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: '1000' }) }}",
                 "options": {}
             },
             "id": "fetch-ga4-lp",
@@ -242,12 +241,12 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "={{ 'https://analyticsdata.googleapis.com/v1beta/properties/' + $node['Margin Resolver'].json.GA4_PROPERTY_ID + ':runReport' }}",
+                "url": "={{ 'https://analyticsdata.googleapis.com/v1beta/properties/' + $node['Validate Config'].json.GA4_PROPERTY_ID + ':runReport' }}",
                 "authentication": "predefinedCredentialType",
                 "nodeCredentialType": "googleApi",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Margin Resolver'].json.DATE_FROM, endDate: $node['Margin Resolver'].json.DATE_TO }], dimensions: [{ name: 'itemId' }], metrics: [{ name: 'itemsViewed' }, { name: 'itemRevenue' }, { name: 'itemsPurchased' }], limit: 10000 }) }}",
+                "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: $node['Validate Config'].json.DATE_FROM, endDate: $node['Validate Config'].json.DATE_TO }], dimensions: [{ name: 'itemId' }], metrics: [{ name: 'itemsViewed' }, { name: 'itemRevenue' }, { name: 'itemsPurchased' }], limit: '10000' }) }}",
                 "options": {}
             },
             "id": "fetch-ga4-items",
@@ -280,7 +279,7 @@
         },
         {
             "parameters": {
-                "url": "={{ 'https://graph.facebook.com/v21.0/' + $node['Margin Resolver'].json.META_ACCOUNT_ID + '/insights' }}",
+                "url": "={{ 'https://graph.facebook.com/v21.0/' + $node['Validate Config'].json.META_ACCOUNT_ID + '/insights' }}",
                 "authentication": "genericCredentialType",
                 "genericAuthType": "httpBearerAuth",
                 "sendQuery": true,
@@ -296,7 +295,7 @@
                         },
                         {
                             "name": "time_range",
-                            "value": "={{ '{\"since\":\"' + $node['Margin Resolver'].json.DATE_FROM + '\",\"until\":\"' + $node['Margin Resolver'].json.DATE_TO + '\"}' }}"
+                            "value": "={{ '{\"since\":\"' + $node['Validate Config'].json.DATE_FROM + '\",\"until\":\"' + $node['Validate Config'].json.DATE_TO + '\"}' }}"
                         },
                         {
                             "name": "limit",
@@ -376,7 +375,7 @@
                 "documentId": {
                     "__rl": true,
                     "mode": "id",
-                    "value": "={{ $node['Margin Resolver'].json.SHEET_ID }}"
+                    "value": "={{ $node['Validate Config'].json.SHEET_ID }}"
                 },
                 "sheetName": {
                     "__rl": true,
@@ -509,6 +508,19 @@
                 2900,
                 300
             ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================================\n// VALIDATE CONFIG — Pre-flight checks before API calls\n// ============================================================\nconst c = $input.first().json;\nconst errors = [];\nconst warnings = [];\n\n// 1. Brand\nif (!c.BRAND) errors.push('❌ Nazwa brandu jest pusta');\n\n// 2-3. Feed URL\nif (!c.FEED_URL) errors.push('❌ Feed URL jest pusty — dodaj feed_url do brand_config lub wpisz w formularzu');\nelse if (!c.FEED_URL.startsWith('http')) errors.push('❌ Feed URL musi zaczynać się od http:// lub https://');\nelse if (!c.FEED_URL.includes('.xml') && !c.FEED_URL.includes('feed')) warnings.push('⚠️ Feed URL nie zawiera .xml ani feed — upewnij się, że to feed produktowy');\n\n// 4-5. GA4\nif (!c.GA4_PROPERTY_ID) errors.push('❌ GA4 Property ID jest pusty — uzupełnij w brand_config lub formularzu');\nelse if (/[^0-9]/.test(String(c.GA4_PROPERTY_ID))) errors.push('❌ GA4 Property ID powinien zawierać tylko cyfry, otrzymano: ' + c.GA4_PROPERTY_ID);\n\n// 6-7. Meta\nif (!c.META_ACCOUNT_ID) errors.push('❌ Meta Account ID jest pusty — uzupełnij w brand_config lub formularzu');\nelse if (!String(c.META_ACCOUNT_ID).startsWith('act_')) errors.push('❌ Meta Account ID powinien zaczynać się od act_, otrzymano: ' + c.META_ACCOUNT_ID);\n\n// 8-9. VAT\nif (!c.VAT_RATE || c.VAT_RATE === 0) errors.push('❌ Brak stawki VAT w brand_config');\nelse if (c.VAT_RATE > 1) warnings.push('⚠️ VAT_RATE = ' + c.VAT_RATE + ' — czy chodziło o ' + (c.VAT_RATE / 100).toFixed(2) + '?');\n\n// 10-12. Dates\nconst from = new Date(c.DATE_FROM);\nconst to = new Date(c.DATE_TO);\nif (from > to) errors.push('❌ Data początkowa (' + c.DATE_FROM + ') jest późniejsza niż końcowa (' + c.DATE_TO + ')');\nconst daysDiff = Math.floor((to - from) / 86400000);\nif (daysDiff > 730) warnings.push('⚠️ Zakres dat = ' + daysDiff + ' dni (> 2 lata) — może zwrócić za dużo danych');\nif (daysDiff < 7) warnings.push('⚠️ Zakres dat = ' + daysDiff + ' dni (< 7) — za mało danych do rzetelnej klasyfikacji');\n\n// 13. Margin Rules\nif (!c.MARGIN_RULES || c.MARGIN_RULES.length === 0) warnings.push('⚠️ Brak reguł marżowych w margin_rules — wszystko dostanie domyślną marżę');\n\n// 14. Sheet ID\nif (!c.SHEET_ID) errors.push('❌ Brak ID arkusza Google Sheets');\n\n// Log warnings\nif (warnings.length > 0) console.log('VALIDATION WARNINGS:\\n' + warnings.join('\\n'));\n\n// Block on errors\nif (errors.length > 0) {\n  throw new Error('VALIDATION FAILED:\\n\\n' + errors.join('\\n') + (warnings.length > 0 ? '\\n\\n' + warnings.join('\\n') : ''));\n}\n\nreturn [{ json: { ...c, _validation: 'PASSED', _warnings: warnings } }];"
+            },
+            "id": "validate-config",
+            "name": "Validate Config",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1504,
+                512
+            ]
         }
     ],
     "connections": {
@@ -568,6 +580,17 @@
             ]
         },
         "Margin Resolver": {
+            "main": [
+                [
+                    {
+                        "node": "Validate Config",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate Config": {
             "main": [
                 [
                     {
