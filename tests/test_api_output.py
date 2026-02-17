@@ -27,9 +27,9 @@ class TestColumnConstants(unittest.TestCase):
         self.META_REMAP = m.META_REMAP
         self.filter_output = m._filter_output
 
-    def test_gold_standard_has_43_columns(self):
-        """Gold standard should have 43 columns (42 + calc_entity_type)."""
-        self.assertEqual(len(self.GOLD_STANDARD_COLS), 43)
+    def test_gold_standard_has_44_columns(self):
+        """Gold standard should have 44 columns (42 + calc_entity_type + feed_image_link)."""
+        self.assertEqual(len(self.GOLD_STANDARD_COLS), 44)
 
     def test_gold_standard_key_columns_present(self):
         """All critical columns must be in GOLD_STANDARD_COLS."""
@@ -155,7 +155,7 @@ class TestHealthEndpoint(unittest.TestCase):
         self.assertEqual(data["status"], "ok")
         self.assertIn("version", data)
         self.assertIn("gold_standard_cols", data)
-        self.assertEqual(data["gold_standard_cols"], 43)
+        self.assertEqual(data["gold_standard_cols"], 44)
 
 
 class TestMetaPrepare(unittest.TestCase):

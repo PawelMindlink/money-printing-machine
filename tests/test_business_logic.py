@@ -49,7 +49,7 @@ class TestBusinessLogic(unittest.TestCase):
         
         unique_labels = clusters.unique()
         self.assertGreaterEqual(len(unique_labels), 2)
-        self.assertTrue('TOP 1000 PLN' in clusters.values)
+        self.assertTrue(1000 in clusters.values)
 
     def test_calculate_contribution_profit(self):
         # Revenue 123, VAT 0.23 -> Net 100
@@ -200,7 +200,7 @@ class TestBusinessLogic(unittest.TestCase):
         """Regression test with real Iiyama parameters."""
         from business_logic_layer import calculate_cluster_stats
         
-        # Cluster: TOP 3000 PLN, 4 products, margin 0.10, VAT 0.23
+        # Cluster: 3000 (integer label), 4 products, margin 0.10, VAT 0.23
         df = pd.DataFrame({
             'calc_gross_price': [2999, 2800, 2500, 2200],
             'base_gross_margin': [0.10, 0.10, 0.10, 0.10]
