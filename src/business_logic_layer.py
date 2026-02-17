@@ -146,14 +146,11 @@ def assign_price_cluster(df, price_col='price_numeric'):
       (Equivalent to: Current Product Price >= Leader / 1.5)
     - If condition fails, start new Cluster with current product as Leader.
     
-    Args:
-        df (pd.DataFrame): DataFrame with 'price_numeric' column.
-        
     Returns:
-        pd.Series: Series of cluster labels.
+        pd.Series: Series of integer cluster labels (max price in cluster).
     """
     if df.empty:
-        return pd.Series(dtype='object')
+        return pd.Series(dtype='int')
         
     # Sort by price desc
     # We use the index to return valid mapping
@@ -180,19 +177,13 @@ def assign_price_cluster(df, price_col='price_numeric'):
         
     sub_df['temp_cluster_id'] = temp_clusters
     
-    # Create Labels
+    # Create Labels — integer (max price in cluster) for sorting in spreadsheets
     id_to_label = {}
     for cid in sub_df['temp_cluster_id'].unique():
         cluster_items = sub_df[sub_df['temp_cluster_id'] == cid]
         max_p = cluster_items[price_col].max()
-        min_p = cluster_items[price_col].min()
-        # Label: TOP X PLN (Range: Y-X)
-        if max_p == min_p:
-            id_to_label[cid] = f"TOP {int(max_p)} PLN"
-        else:
-            id_to_label[cid] = f"TOP {int(max_p)} PLN"
+        id_to_label[cid] = int(max_p)
         
-    # Map back to original index
     # Map back to original index
     return sub_df['temp_cluster_id'].map(id_to_label)
 
