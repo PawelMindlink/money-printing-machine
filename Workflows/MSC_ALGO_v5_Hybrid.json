@@ -103,7 +103,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// ============================================================\n// BUILD CONFIG v2 — Single Source of Truth (brand_config)\n// VAT and Default Margin come from brand_config, not form.\n// ============================================================\n\nconst formData = $node['Parse Form'].json;\n\nconst HARDCODED = {\n  'iiyama':      { ga4: '280127077',  meta: 'act_1438113836305522' },\n  'bushido':     { ga4: '297192186',  meta: 'act_1930400651212132' },\n  'koszulkowy':  { ga4: '270928705',  meta: 'act_1897121353740892' },\n  'mindlink':    { ga4: '477769901',  meta: 'act_1578563932814949' }\n};\n\nconst sheetBrands = $input.all().map(i => i.json);\nconst sheetMatch = sheetBrands.find(row =>\n  (row.brand_name || '').toLowerCase().trim() === formData._brand_key\n);\n\n// VAT and DEFAULT_MARGIN from brand_config (Single Source of Truth)\nconst vatRate = sheetMatch ? (parseFloat(sheetMatch.vat_rate) || 0.23) : 0.23;\nconst defaultMargin = sheetMatch ? (parseFloat(sheetMatch.default_margin) || 0.10) : 0.10;\n\nif (!sheetMatch) {\n  throw new Error(`Brand \"${formData._brand_name}\" not found in brand_config sheet. Add a row with brand_name=\"${formData._brand_name}\" first.`);\n}\n\nconst hardcoded = HARDCODED[formData._brand_key];\nconst ga4Id = formData._form_ga4_id\n           || (sheetMatch ? (sheetMatch.ga4_property_id || '') : '')\n           || (hardcoded ? hardcoded.ga4 : '');\nconst metaId = formData._form_meta_id\n            || (sheetMatch ? (sheetMatch.meta_account_id || '') : '')\n            || (hardcoded ? hardcoded.meta : '');\n\nif (!ga4Id) throw new Error(`GA4 Property ID missing for \"${formData._brand_name}\"`);\nif (!metaId) throw new Error(`Meta Account ID missing for \"${formData._brand_name}\"`);\n\nconst isNewBrand = !hardcoded && !sheetMatch;\n\nreturn [{ json: {\n  BRAND: formData._brand_name,\n  VAT_RATE: vatRate,\n  DEFAULT_MARGIN: defaultMargin,\n  FEED_URL: formData._feed_url,\n  SHEET_ID: formData._sheet_id,\n  GA4_PROPERTY_ID: ga4Id,\n  META_ACCOUNT_ID: metaId,\n  DATE_FROM: formData._date_from,\n  DATE_TO: formData._date_to,\n  MSC_ALGO: { MIN_META_TRANS: 10, MIN_ORGANIC_SESSIONS: 300 },\n  _is_new_brand: isNewBrand\n} }];"
+                "jsCode": "// ============================================================\n// BUILD CONFIG v3 — Single Source of Truth (brand_config)\n// VAT, Default Margin, and Currency come from brand_config.\n// ============================================================\n\nconst formData = $node['Parse Form'].json;\n\nconst HARDCODED = {\n  'iiyama':      { ga4: '280127077',  meta: 'act_1438113836305522' },\n  'bushido':     { ga4: '297192186',  meta: 'act_1930400651212132' },\n  'koszulkowy':  { ga4: '270928705',  meta: 'act_1897121353740892' },\n  'mindlink':    { ga4: '477769901',  meta: 'act_1578563932814949' }\n};\n\nconst sheetBrands = $input.all().map(i => i.json);\nconst sheetMatch = sheetBrands.find(row =>\n  (row.brand_name || '').toLowerCase().trim() === formData._brand_key\n);\n\n// VAT, DEFAULT_MARGIN, and CURRENCY from brand_config (Single Source of Truth)\nconst vatRate = sheetMatch ? (parseFloat(sheetMatch.vat_rate) || 0.23) : 0.23;\nconst defaultMargin = sheetMatch ? (parseFloat(sheetMatch.default_margin) || 0.10) : 0.10;\nconst currency = sheetMatch ? (sheetMatch.currency || 'PLN').toUpperCase().trim() : 'PLN';\n\nif (!sheetMatch) {\n  throw new Error(`Brand \"${formData._brand_name}\" not found in brand_config sheet. Add a row with brand_name=\"${formData._brand_name}\" first.`);\n}\n\nconst hardcoded = HARDCODED[formData._brand_key];\nconst ga4Id = formData._form_ga4_id\n           || (sheetMatch ? (sheetMatch.ga4_property_id || '') : '')\n           || (hardcoded ? hardcoded.ga4 : '');\nconst metaId = formData._form_meta_id\n            || (sheetMatch ? (sheetMatch.meta_account_id || '') : '')\n            || (hardcoded ? hardcoded.meta : '');\n\nif (!ga4Id) throw new Error(`GA4 Property ID missing for \"${formData._brand_name}\"`);\nif (!metaId) throw new Error(`Meta Account ID missing for \"${formData._brand_name}\"`);\n\nconst isNewBrand = !hardcoded && !sheetMatch;\n\nreturn [{ json: {\n  BRAND: formData._brand_name,\n  VAT_RATE: vatRate,\n  DEFAULT_MARGIN: defaultMargin,\n  CURRENCY: currency,\n  FEED_URL: formData._feed_url,\n  SHEET_ID: formData._sheet_id,\n  GA4_PROPERTY_ID: ga4Id,\n  META_ACCOUNT_ID: metaId,\n  DATE_FROM: formData._date_from,\n  DATE_TO: formData._date_to,\n  MSC_ALGO: { MIN_META_TRANS: 10, MIN_ORGANIC_SESSIONS: 300 },\n  _is_new_brand: isNewBrand\n} }];"
             },
             "id": "config-builder",
             "name": "Build Config",
@@ -189,7 +189,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// NORMALIZE FEED + MARGINS v2\n// FIX: g: namespace fields use bracket notation (p['g:id'] not p.g_id)\n// FIX: DEFAULT rule from margin_rules is used as fallback\nconst config = $node['Margin Resolver'].json;\nconst marginRules = config.MARGIN_RULES || [];\nconst defaultMargin = config.DEFAULT_MARGIN || 0.10;\n\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  let u = url.toLowerCase().replace(/^https?:\\/\\/(www\\.)?/, '').split('?')[0].replace(/\\/$/, '');\n  return u;\n}\n\nfunction resolveMargin(feedId, feedCategory, feedTitle) {\n  const id = (feedId || '').trim();\n  const cat = (feedCategory || '').toLowerCase().trim();\n  const title = (feedTitle || '').toLowerCase().trim();\n  const searchStr = cat + ' ' + title;\n  for (const rule of marginRules) {\n    if (rule.match_type === 'SKU_EXACT' && id === rule.match_value) return rule.margin_rate;\n    if (rule.match_type === 'CATEGORY_EXACT' && cat === rule.match_value.toLowerCase()) return rule.margin_rate;\n    if (rule.match_type === 'KEYWORD' && searchStr.includes(rule.match_value.toLowerCase())) return rule.margin_rate;\n  }\n  return defaultMargin;\n}\n\nconst feedData = $input.first().json;\nlet products = [];\nif (feedData.rss?.channel?.item) products = [feedData.rss.channel.item].flat();\nelse if (feedData.feed?.entry) products = [feedData.feed.entry].flat();\nelse if (feedData.products?.product) products = [feedData.products.product].flat();\n\nreturn products.map(p => {\n  const id = p['g:id'] || p.g_id || p.id || '';\n  const cat = p['g:product_type'] || p['g:google_product_category'] || p.product_type || p.google_product_category || '';\n  const link = p['g:link'] || p.g_link || p.link || '';\n  const priceRaw = p['g:price'] || p.g_price || p.price || '0';\n  const title = p['g:title'] || p.g_title || p.title || '';\n  const brand = p['g:brand'] || p.g_brand || p.brand || '';\n  \n  return { json: {\n    feed_id: id,\n    feed_title: title,\n    feed_brand: brand,\n    feed_price: parseFloat(String(priceRaw).replace(/[^0-9.]/g, '')) || 0,\n    feed_category: cat,\n    feed_link: link,\n    norm_url_path: normalizeUrl(link).split('/').slice(1).join('/'),\n    base_gross_margin: resolveMargin(id, cat, title)\n  }};\n});"
+                "jsCode": "// NORMALIZE FEED + MARGINS v3\n// FIX: g: namespace fields use bracket notation (p['g:id'] not p.g_id)\n// FIX: DEFAULT rule from margin_rules is used as fallback\n// ADD: feed_image_link extraction (Issue 2)\nconst config = $node['Margin Resolver'].json;\nconst marginRules = config.MARGIN_RULES || [];\nconst defaultMargin = config.DEFAULT_MARGIN || 0.10;\n\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  let u = url.toLowerCase().replace(/^https?:\\/\\/(www\\.)?/, '').split('?')[0].replace(/\\/$/, '');\n  return u;\n}\n\nfunction resolveMargin(feedId, feedCategory, feedTitle) {\n  const id = (feedId || '').trim();\n  const cat = (feedCategory || '').toLowerCase().trim();\n  const title = (feedTitle || '').toLowerCase().trim();\n  const searchStr = cat + ' ' + title;\n  for (const rule of marginRules) {\n    if (rule.match_type === 'SKU_EXACT' && id === rule.match_value) return rule.margin_rate;\n    if (rule.match_type === 'CATEGORY_EXACT' && cat === rule.match_value.toLowerCase()) return rule.margin_rate;\n    if (rule.match_type === 'KEYWORD' && searchStr.includes(rule.match_value.toLowerCase())) return rule.margin_rate;\n  }\n  return defaultMargin;\n}\n\nconst feedData = $input.first().json;\nlet products = [];\nif (feedData.rss?.channel?.item) products = [feedData.rss.channel.item].flat();\nelse if (feedData.feed?.entry) products = [feedData.feed.entry].flat();\nelse if (feedData.products?.product) products = [feedData.products.product].flat();\n\nreturn products.map(p => {\n  const id = p['g:id'] || p.g_id || p.id || '';\n  const cat = p['g:product_type'] || p['g:google_product_category'] || p.product_type || p.google_product_category || '';\n  const link = p['g:link'] || p.g_link || p.link || '';\n  const priceRaw = p['g:price'] || p.g_price || p.price || '0';\n  const title = p['g:title'] || p.g_title || p.title || '';\n  const brand = p['g:brand'] || p.g_brand || p.brand || '';\n  const imageLink = p['g:image_link'] || p.g_image_link || p.image_link || '';\n  \n  return { json: {\n    feed_id: id,\n    feed_title: title,\n    feed_brand: brand,\n    feed_price: parseFloat(String(priceRaw).replace(/[^0-9.]/g, '')) || 0,\n    feed_category: cat,\n    feed_link: link,\n    feed_image_link: imageLink,\n    norm_url_path: normalizeUrl(link).split('/').slice(1).join('/'),\n    base_gross_margin: resolveMargin(id, cat, title)\n  }};\n});"
             },
             "id": "normalize-feed",
             "name": "Normalize Feed + Margins",
@@ -350,49 +350,6 @@
         },
         {
             "parameters": {
-                "jsCode": "// SAVE NEW BRAND CONFIG\nconst config = $node['Margin Resolver'].json;\nif (!config._is_new_brand) return [];\nreturn [{ json: {\n  brand_name: config.BRAND,\n  ga4_property_id: config.GA4_PROPERTY_ID,\n  meta_account_id: config.META_ACCOUNT_ID,\n  vat_rate: config.VAT_RATE,\n  default_margin: config.DEFAULT_MARGIN,\n  feed_url: config.FEED_URL,\n  created_at: new Date().toISOString()\n} }];"
-            },
-            "id": "check-new-brand",
-            "name": "Check New Brand",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                1712,
-                1120
-            ]
-        },
-        {
-            "parameters": {
-                "operation": "append",
-                "documentId": {
-                    "__rl": true,
-                    "mode": "id",
-                    "value": "={{ $node['Margin Resolver'].json.SHEET_ID }}"
-                },
-                "sheetName": {
-                    "__rl": true,
-                    "mode": "name",
-                    "value": "brand_config"
-                },
-                "options": {}
-            },
-            "id": "save-brand-config",
-            "name": "Save Brand Config",
-            "type": "n8n-nodes-base.googleSheets",
-            "typeVersion": 4.5,
-            "position": [
-                1904,
-                1120
-            ],
-            "credentials": {
-                "googleSheetsOAuth2Api": {
-                    "id": "4rQw16Pw2ajSyr33",
-                    "name": "Google Sheets account"
-                }
-            }
-        },
-        {
-            "parameters": {
                 "method": "POST",
                 "url": "https://money-printing-machine.onrender.com/process",
                 "sendBody": true,
@@ -488,6 +445,70 @@
                 512
             ],
             "notes": "AUTO-CHAIN: Calls Enrichment Pipeline webhook with brand name after MSC-ALGO completes"
+        },
+        {
+            "parameters": {
+                "content": "## 1️⃣ KONFIGURACJA\nFormularz → Brand Config → Margin Rules\n\nOdczytuje dane brandu (VAT, marża, waluta, GA4/Meta ID) i reguły marżowe z Google Sheets.",
+                "height": 280,
+                "width": 700,
+                "color": 4
+            },
+            "id": "sticky-config",
+            "name": "Note: Configuration",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [
+                400,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "content": "## 2️⃣ POBIERANIE DANYCH\nFeed XML + GA4 Landing Pages + GA4 Items + Meta Ads\n\n4 równoległe strumienie danych, każdy normalizowany do wspólnego formatu.",
+                "height": 600,
+                "width": 700,
+                "color": 5
+            },
+            "id": "sticky-ingest",
+            "name": "Note: Data Ingestion",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [
+                1560,
+                80
+            ]
+        },
+        {
+            "parameters": {
+                "content": "## 3️⃣ PYTHON BRAIN\nSmartMatcher → Waterfall Classification → Price Clustering → Bidding\n\n44-kolumnowy output z priorytetami P1–P8, segmentami i strategią bidowania.",
+                "height": 280,
+                "width": 500,
+                "color": 6
+            },
+            "id": "sticky-brain",
+            "name": "Note: Python Brain",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [
+                2300,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "content": "## 4️⃣ OUTPUT\nZapis do Google Sheets → Trigger Enrichment Pipeline\n\nWynik trafia do arkusza msc_algo_output, potem automatycznie startuje wzbogacanie AI.",
+                "height": 280,
+                "width": 500,
+                "color": 3
+            },
+            "id": "sticky-output",
+            "name": "Note: Output",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [
+                2900,
+                300
+            ]
         }
     ],
     "connections": {
@@ -566,11 +587,6 @@
                     },
                     {
                         "node": "Fetch Meta Ads",
-                        "type": "main",
-                        "index": 0
-                    },
-                    {
-                        "node": "Check New Brand",
                         "type": "main",
                         "index": 0
                     }
@@ -672,17 +688,6 @@
                         "node": "Python Bridge",
                         "type": "main",
                         "index": 3
-                    }
-                ]
-            ]
-        },
-        "Check New Brand": {
-            "main": [
-                [
-                    {
-                        "node": "Save Brand Config",
-                        "type": "main",
-                        "index": 0
                     }
                 ]
             ]
