@@ -65,7 +65,7 @@ META_REMAP = {
 GOLD_STANDARD_COLS = [
     'feed_id', 'feed_title', 'feed_brand', 'feed_category',
     'calc_gross_price', 'is_product', 'is_price_inferred',
-    'feed_link', 'norm_url',
+    'feed_link', 'feed_image_link', 'norm_url',
     'calc_priority', 'calc_segment', 'calc_reason',
     'calc_is_actionable', 'calc_action_type',
     'meta_class', 'ga4_class',
