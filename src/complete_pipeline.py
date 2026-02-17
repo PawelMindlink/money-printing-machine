@@ -130,17 +130,19 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
     df = _ensure_cols(df, [
         'meta_spend', 'meta_revenue', 'meta_purchases',
         'ga4item_views', 'ga4item_revenue', 'ga4item_purchases',
-        'feed_price_str', 'feed_category', 'feed_title', 'feed_link'
+        'feed_price_str', 'feed_category', 'feed_title', 'feed_link', 'feed_image_link'
     ], default=0)
     # String columns need empty string default
-    for sc in ['feed_price_str', 'feed_category', 'feed_title', 'feed_link']:
+    for sc in ['feed_price_str', 'feed_category', 'feed_title', 'feed_link', 'feed_image_link']:
         df[sc] = df[sc].fillna('')
 
     if 'calc_entity_type' not in df.columns:
         df['calc_entity_type'] = 'PRODUCT'
     if 'meta_spend' in df.columns:
         df.loc[df['calc_entity_type'].isna(), 'calc_entity_type'] = 'PRODUCT'
-        mask_syn = (df['feed_id'].isna()) & (df['meta_spend'] > 0)
+        # Treat empty strings as NaN for feed_id (n8n sends '' not NaN)
+        _feed_id_missing = df['feed_id'].isna() | (df['feed_id'].astype(str).str.strip() == '')
+        mask_syn = _feed_id_missing & (df['meta_spend'] > 0)
         df.loc[mask_syn, 'calc_entity_type'] = 'CATEGORY_OR_AD'
 
     df['is_product'] = df['calc_entity_type'] == 'PRODUCT'
@@ -368,6 +370,19 @@ def run_pipeline_logic(df, params):
     df['arpiv'] = df.apply(lambda r: bl.calculate_arpiv(r.get('ga4item_revenue', 0), r.get('ga4item_views', 0)), axis=1)
     df.sort_values(by=['calc_priority', 'calc_contribution_profit'], ascending=[True, False], inplace=True)
 
+    # Row cap with activity priority (Issue 4)
+    # Active rows first, empty CATEGORY_OR_AD at the end, capped at 1000 total
+    MAX_OUTPUT_ROWS = 1000
+    _has_activity = (
+        (_col(df, 'ga4lp_sessions') > 0) |
+        (_col(df, 'meta_spend') > 0) |
+        (_col(df, 'ga4item_views') > 0)
+    )
+    df_active = df[_has_activity]
+    df_empty = df[~_has_activity]
+    remaining = max(0, MAX_OUTPUT_ROWS - len(df_active))
+    df = pd.concat([df_active, df_empty.head(remaining)], ignore_index=True)
+
     return df
 
 
@@ -545,8 +560,9 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
             df['calc_entity_type'] = 'PRODUCT'
             
             # 2. Identify items NOT in feed but with Spend as CATEGORY_OR_AD
-            # feed_id is NaN for these rows (outer join from Meta)
-            mask_syn = (df['feed_id'].isna()) & (df['meta_spend'] > 0)
+            # Treat empty strings as NaN (n8n sends '' not NaN)
+            _feed_id_missing = df['feed_id'].isna() | (df['feed_id'].astype(str).str.strip() == '')
+            mask_syn = _feed_id_missing & (df['meta_spend'] > 0)
             if mask_syn.sum() > 0:
                 df.loc[mask_syn, 'feed_brand'] = brand
                 df.loc[mask_syn, 'calc_entity_type'] = 'CATEGORY_OR_AD'
