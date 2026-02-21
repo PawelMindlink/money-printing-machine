@@ -2,7 +2,25 @@ import pandas as pd
 import os
 import xml.etree.ElementTree as ET
 from io import StringIO
+import requests
 import business_logic_layer as bl
+
+def parse_product_feed_xml_from_url(url: str) -> pd.DataFrame:
+    """Download and parse Product Feed from a URL."""
+    try:
+        print(f"[DATA LOADER] Downloading feed from {url}...")
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        
+        # Parse from string
+        tree = ET.ElementTree(ET.fromstring(response.content))
+        return _parse_feed_tree(tree)
+    except Exception as e:
+        print(f"[DATA LOADER] Error downloading/parsing feed: {e}")
+        return pd.DataFrame()
+
+def _parse_feed_tree(tree: ET.ElementTree) -> pd.DataFrame:
+    """Internal helper to parse feed elements to DataFrame."""
 
 def load_ga4_csv(filepath):
     """Load GA4 CSV by dynamically finding the header row"""
@@ -55,6 +73,10 @@ def parse_product_feed_xml(filepath):
         return pd.DataFrame()
         
     tree = ET.parse(filepath)
+    return _parse_feed_tree(tree)
+
+def _parse_feed_tree(tree: ET.ElementTree) -> pd.DataFrame:
+    """Internal helper to parse feed elements to DataFrame."""
     root = tree.getroot()
     ns = {'g': 'http://base.google.com/ns/1.0'}
     

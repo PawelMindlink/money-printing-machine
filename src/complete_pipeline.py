@@ -130,10 +130,10 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
     df = _ensure_cols(df, [
         'meta_spend', 'meta_revenue', 'meta_purchases',
         'ga4item_views', 'ga4item_revenue', 'ga4item_purchases',
-        'feed_price_str', 'feed_category', 'feed_title', 'feed_link', 'feed_image_link'
+        'feed_price_str', 'feed_category', 'feed_title', 'feed_link', 'feed_image_link', 'feed_id'
     ], default=0)
     # String columns need empty string default
-    for sc in ['feed_price_str', 'feed_category', 'feed_title', 'feed_link', 'feed_image_link']:
+    for sc in ['feed_price_str', 'feed_category', 'feed_title', 'feed_link', 'feed_image_link', 'feed_id']:
         df[sc] = df[sc].fillna('')
 
     if 'calc_entity_type' not in df.columns:
@@ -211,6 +211,7 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
     df['is_price_inferred'] = ~df['is_product']
 
     # Price Clusters
+    cluster_threshold = float(params.get('CLUSTER_THRESHOLD', 1.5))
     df['calc_price_cluster'] = 'Other'
     for margin in df['base_gross_margin'].unique():
         mask = df['base_gross_margin'] == margin
@@ -219,7 +220,7 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
             subset['price_numeric'] = subset['calc_gross_price']
             subset_valid = subset[subset['price_numeric'] > 0].copy()
             if not subset_valid.empty:
-                clusters = bl.assign_price_cluster(subset_valid, price_col='price_numeric')
+                clusters = bl.assign_price_cluster(subset_valid, price_col='price_numeric', threshold_ratio=cluster_threshold)
                 df.loc[subset_valid.index, 'calc_price_cluster'] = clusters.astype(str)
 
     # Cluster Stats → Bid/Cost Caps
@@ -336,12 +337,18 @@ def run_pipeline_logic(df, params):
                 return 8, "IGNORE", "High views, no purchases"
         return 8, "IGNORE", "Insufficient data"
 
-    msc_results = df.apply(run_msc_algo, axis=1, result_type='expand')
-    df['calc_priority'] = msc_results[0]
-    df['calc_segment'] = msc_results[1]
-    df['calc_reason'] = msc_results[2]
-    df.loc[df['calc_priority'] == 99, 'calc_priority'] = 4
-    df['calc_is_actionable'] = df['calc_priority'].isin([1, 2, 3, 4, 5, 6, 7])
+    if not df.empty:
+        msc_results = df.apply(run_msc_algo, axis=1, result_type='expand')
+        df['calc_priority'] = msc_results[0]
+        df['calc_segment'] = msc_results[1]
+        df['calc_reason'] = msc_results[2]
+        df.loc[df['calc_priority'] == 99, 'calc_priority'] = 4
+        df['calc_is_actionable'] = df['calc_priority'].isin([1, 2, 3, 4, 5, 6, 7])
+    else:
+        df['calc_priority'] = pd.Series(dtype=int)
+        df['calc_segment'] = pd.Series(dtype=str)
+        df['calc_reason'] = pd.Series(dtype=str)
+        df['calc_is_actionable'] = pd.Series(dtype=bool)
 
     action_map = {1: "SCALE_SPEND", 2: "MAINTAIN_SPEND", 3: "NEW_AD_CREATIVES",
                   4: "UX_PRICE_AUDIT", 5: "BROAD_AD_TARGETING", 6: "CONVERSION_CAMPAIGN",
@@ -498,43 +505,36 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         # --- NEW MATCHING LOGIC (SmartMatcher Cascade) ---
         print("[MERGE] Running SmartMatcher Cascade for Meta Ads...")
         # 1. Initialize Matcher with Feed
-        matcher = bl.SmartMatcher(df, id_col='feed_id', url_col='norm_url')
-        
-        # 2. Enrich Meta Data with Feed IDs
-        # meta_agg has 'norm_url', we want to find matching 'feed_id' from df
-        meta_enriched = matcher.enrich_dataframe(meta_agg, url_col='norm_url')
+        if not df.empty and 'feed_id' in df.columns:
+            matcher = bl.SmartMatcher(df, id_col='feed_id', url_col='norm_url')
+            
+            # 2. Enrich Meta Data with Feed IDs
+            meta_enriched = matcher.enrich_dataframe(meta_agg, url_col='norm_url')
+        else:
+            meta_enriched = meta_agg.copy()
+            meta_enriched['feed_feed_id'] = None
+
+        match_col = 'feed_feed_id' if 'feed_feed_id' in meta_enriched.columns else 'feed_id'
+        if match_col not in meta_enriched.columns:
+            meta_enriched[match_col] = None
         
         # 3. Merge back to Main DF
-        # We need to merge on 'feed_id' where possible, or 'norm_url' if not.
-        # Strat: 
-        #  a) Separate Meta rows that found a Feed Match vs those that didn't.
-        #  b) For Matched: Merge on feed_id.
-        #  c) For Unmatched: Append as new rows (Category/Synthetic).
-        
-        # A simpler approach that fits current structure:
-        # The main DF is the FEED. We want to attach Meta stats to it.
-        # But we ALSO want to keep Meta rows that didn't match (Synthetic).
-        
-        # Left Join Feed <- Meta (via SmartMatch)
-        # We can't just do pd.merge because the keys vary.
-        # Instead, let's map Meta stats to Feed IDs.
-        
-        # Aggregate Meta stats by matched feed_id
-        meta_matched = meta_enriched[meta_enriched['feed_feed_id'].notna()]
+        meta_matched = meta_enriched[meta_enriched[match_col].notna()]
         if not meta_matched.empty:
             # Group by found feed_id (handling 1-to-many matches if any)
-            meta_to_feed = meta_matched.groupby('feed_feed_id')[list(aggs.keys())].sum().reset_index()
+            meta_to_feed = meta_matched.groupby(match_col)[list(aggs.keys())].sum().reset_index()
             # Merge into main DF
-            df = pd.merge(df, meta_to_feed, left_on='feed_id', right_on='feed_feed_id', how='left')
+            df = pd.merge(df, meta_to_feed, left_on='feed_id', right_on=match_col, how='left')
             # drop temp join col
-            df.drop(columns=['feed_feed_id'], inplace=True, errors='ignore')
+            df.drop(columns=[match_col], inplace=True, errors='ignore')
         else:
              # Just add columns with 0
              for col in aggs.keys():
-                 df[col] = 0.0
+                 if col not in df.columns:
+                     df[col] = 0.0
 
         # Identify Unmatched Meta Rows (Ghost/Category candidates)
-        meta_unmatched = meta_enriched[meta_enriched['feed_feed_id'].isna()].copy()
+        meta_unmatched = meta_enriched[meta_enriched[match_col].isna()].copy()
         
         # We need to append these to the DF, but they lack feed info.
         # Align columns

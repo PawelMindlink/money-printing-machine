@@ -1,8 +1,8 @@
 {
   "updatedAt": "2026-02-15T04:57:58.575Z",
   "createdAt": "2026-02-12T12:19:18.036Z",
-  "id": "WADs1VFZV4wjeaQR",
-  "name": "MSC_ALGO_v5_Hybrid",
+  "id": "msc-algo-v6-orchestrator",
+  "name": "MSC-ALGO v6 (Orchestrator-Worker)",
   "description": null,
   "active": false,
   "isArchived": false,
@@ -158,20 +158,6 @@
     },
     {
       "parameters": {
-        "url": "={{ $json.FEED_URL }}",
-        "options": {}
-      },
-      "id": "fetch-feed",
-      "name": "Fetch Product Feed",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1712,
-        240
-      ]
-    },
-    {
-      "parameters": {
         "options": {
           "explicitArray": false,
           "ignoreAttrs": true
@@ -188,169 +174,8 @@
     },
     {
       "parameters": {
-        "jsCode": "// NORMALIZE FEED + MARGINS v3\n// FIX: g: namespace fields use bracket notation (p['g:id'] not p.g_id)\n// FIX: DEFAULT rule from margin_rules is used as fallback\n// ADD: feed_image_link extraction (Issue 2)\nconst config = $node['Validate Config'].json;\nconst marginRules = config.MARGIN_RULES || [];\nconst defaultMargin = config.DEFAULT_MARGIN || 0.10;\n\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  let u = url.toLowerCase().replace(/^https?:\\/\\/(www\\.)?/, '').split('?')[0].replace(/\\/$/, '');\n  return u;\n}\n\nfunction resolveMargin(feedId, feedCategory, feedTitle) {\n  const id = (feedId || '').trim();\n  const cat = (feedCategory || '').toLowerCase().trim();\n  const title = (feedTitle || '').toLowerCase().trim();\n  const searchStr = cat + ' ' + title;\n  for (const rule of marginRules) {\n    if (rule.match_type === 'SKU_EXACT' && id === rule.match_value) return rule.margin_rate;\n    if (rule.match_type === 'CATEGORY_EXACT' && cat === rule.match_value.toLowerCase()) return rule.margin_rate;\n    if (rule.match_type === 'KEYWORD' && searchStr.includes(rule.match_value.toLowerCase())) return rule.margin_rate;\n  }\n  return defaultMargin;\n}\n\nconst feedData = $input.first().json;\nlet products = [];\nif (feedData.rss?.channel?.item) products = [feedData.rss.channel.item].flat();\nelse if (feedData.feed?.entry) products = [feedData.feed.entry].flat();\nelse if (feedData.products?.product) products = [feedData.products.product].flat();\n\nreturn products.map(p => {\n  const id = p['g:id'] || p.g_id || p.id || '';\n  const cat = p['g:product_type'] || p['g:google_product_category'] || p.product_type || p.google_product_category || '';\n  const link = p['g:link'] || p.g_link || p.link || '';\n  const priceRaw = p['g:price'] || p.g_price || p.price || '0';\n  const title = p['g:title'] || p.g_title || p.title || '';\n  const brand = p['g:brand'] || p.g_brand || p.brand || '';\n  const imageLink = p['g:image_link'] || p.g_image_link || p.image_link || '';\n  \n  return { json: {\n    feed_id: id,\n    feed_title: title,\n    feed_brand: brand,\n    feed_price: parseFloat(String(priceRaw).replace(/[^0-9.]/g, '')) || 0,\n    feed_category: cat,\n    feed_link: link,\n    feed_image_link: imageLink,\n    norm_url_path: normalizeUrl(link).split('/').slice(1).join('/'),\n    base_gross_margin: resolveMargin(id, cat, title)\n  }};\n});"
-      },
-      "id": "normalize-feed",
-      "name": "Normalize Feed + Margins",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2112,
-        240
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
-        "url": "={{ 'https://analyticsdata.googleapis.com/v1beta/properties/' + $node['Validate Config'].json.GA4_PROPERTY_ID + ':runReport' }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: String($node['Validate Config'].json.DATE_FROM), endDate: String($node['Validate Config'].json.DATE_TO) }], dimensions: [{ name: 'landingPagePlusQueryString' }], metrics: [{ name: 'sessions' }, { name: 'purchaseRevenue' }, { name: 'ecommercePurchases' }, { name: 'totalUsers' }, { name: 'firstTimePurchasers' }], orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: 1000 }) }}",
-        "options": {}
-      },
-      "id": "fetch-ga4-lp",
-      "name": "Fetch GA4 Landing Page",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1712,
-        464
-      ],
-      "credentials": {
-        "googleApi": {
-          "id": "HDkQgqGFjUakc4Ct",
-          "name": "Google Service Account account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// NORMALIZE GA4 LP (null-safe)\nconst response = $input.first().json;\nconst rows = response.rows || [];\nif (rows.length === 0) {\n  console.log('WARNING: GA4 LP returned 0 rows \u2014 filter may be too strict or property ID wrong');\n  return [{ json: { ga4_lp_url: '', ga4_sessions: 0, ga4_revenue: 0, ga4_trans: 0, ga4_users: 0, ga4_first_time_purchasers: 0, _empty: true } }];\n}\nreturn rows.map(row => {\n  const lp = row.dimensionValues[0].value || '';\n  return { json: {\n    ga4_lp_url: lp,\n    ga4_norm_path: lp.toLowerCase().replace(/^\\/|\\/$/g, '').split('?')[0],\n    ga4_sessions: parseInt(row.metricValues[0].value),\n    ga4_revenue: parseFloat(row.metricValues[1].value),\n    ga4_trans: parseInt(row.metricValues[2].value),\n    ga4_users: parseInt(row.metricValues[3].value),\n    ga4_first_time_purchasers: parseInt(row.metricValues[4].value)\n  }};\n});"
-      },
-      "id": "normalize-ga4-lp",
-      "name": "Normalize GA4 LP",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1904,
-        464
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ 'https://analyticsdata.googleapis.com/v1beta/properties/' + $node['Validate Config'].json.GA4_PROPERTY_ID + ':runReport' }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: String($node['Validate Config'].json.DATE_FROM), endDate: String($node['Validate Config'].json.DATE_TO) }], dimensions: [{ name: 'itemId' }], metrics: [{ name: 'itemsViewed' }, { name: 'itemRevenue' }, { name: 'itemsPurchased' }], limit: 10000 }) }}",
-        "options": {}
-      },
-      "id": "fetch-ga4-items",
-      "name": "Fetch GA4 Items",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1712,
-        688
-      ],
-      "credentials": {
-        "googleApi": {
-          "id": "HDkQgqGFjUakc4Ct",
-          "name": "Google Service Account account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// NORMALIZE GA4 ITEMS (null-safe)\nconst response = $input.first().json;\nconst rows = response.rows || [];\nif (rows.length === 0) {\n  console.log('WARNING: GA4 Items returned 0 rows');\n  return [{ json: { ga4_item_id: '', ga4_item_views: 0, ga4_item_rev: 0, ga4_item_purch: 0, _empty: true } }];\n}\nreturn rows.map(row => {\n  return { json: {\n    ga4_item_id: row.dimensionValues[0].value,\n    ga4_item_views: parseInt(row.metricValues[0].value),\n    ga4_item_rev: parseFloat(row.metricValues[1].value),\n    ga4_item_purch: parseInt(row.metricValues[2].value)\n  }};\n});"
-      },
-      "id": "normalize-ga4-items",
-      "name": "Normalize GA4 Items",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1904,
-        688
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ 'https://graph.facebook.com/v21.0/' + $node['Validate Config'].json.META_ACCOUNT_ID + '/insights' }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpBearerAuth",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "level",
-              "value": "ad"
-            },
-            {
-              "name": "fields",
-              "value": "ad_id,ad_name,spend,actions,action_values,impressions,clicks,website_url"
-            },
-            {
-              "name": "time_range",
-              "value": "={{ '{\"since\":\"' + $node['Validate Config'].json.DATE_FROM + '\",\"until\":\"' + $node['Validate Config'].json.DATE_TO + '\"}' }}"
-            },
-            {
-              "name": "limit",
-              "value": "500"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "fetch-meta-ads",
-      "name": "Fetch Meta Ads",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1712,
-        912
-      ],
-      "credentials": {
-        "httpBearerAuth": {
-          "id": "RAbkfjgnH4OLFDrm",
-          "name": "Bearer Auth account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// NORMALIZE META ADS\nconst data = $input.first().json.data || [];\nreturn data.map(ad => {\n  const getVal = (list, type) => {\n    if (!list) return 0;\n    const m = list.find(x => x.action_type === type);\n    return m ? parseFloat(m.value) : 0;\n  };\n  const purch = getVal(ad.actions, 'offsite_conversion.fb_pixel_purchase') || getVal(ad.actions, 'purchase');\n  const val = getVal(ad.action_values, 'offsite_conversion.fb_pixel_purchase') || getVal(ad.action_values, 'purchase');\n  const spend = parseFloat(ad.spend || '0');\n\n  return { json: {\n    meta_ad_id: ad.ad_id,\n    meta_ad_name: ad.ad_name,\n    meta_url: ad.website_url || '',\n    meta_spend: spend,\n    meta_purch: purch,\n    meta_rev: val,\n    meta_roas: spend > 0 ? val / spend : 0\n  }};\n});"
-      },
-      "id": "normalize-meta-ads",
-      "name": "Normalize Meta Ads",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1904,
-        912
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// ============================================================\n// PYTHON BRIDGE \u2014 Consolidate all data for external Python API\n// ============================================================\n\nconst warnings = [];\nconst safeGet = (nodeName) => {\n  try {\n    const items = $(nodeName).all().map(i => i.json);\n    if (items.length === 0) warnings.push(nodeName + ': 0 items');\n    return items;\n  } catch (e) {\n    warnings.push(nodeName + ' FAILED: ' + e.message);\n    return [];\n  }\n};\n\nconst feed = safeGet('Normalize Feed + Margins');\nconst meta = safeGet('Normalize Meta Ads');\nconst items = safeGet('Normalize GA4 Items');\nconst lp = safeGet('Normalize GA4 LP');\n\nlet config = {};\ntry { config = $('Margin Resolver').first().json; } catch(e) {}\n\n// Log data sizes for debugging\nconsole.log('Python Bridge: feed=' + feed.length + ', meta=' + meta.length + ', items=' + items.length + ', lp=' + lp.length);\nif (warnings.length > 0) console.log('WARNINGS: ' + warnings.join('; '));\n\n// Return consolidated payload as single item\nreturn [{ json: {\n  feed: feed,\n  meta_ads: meta,\n  ga4_items: items,\n  ga4_lp: lp,\n  _debug: { feed: feed.length, meta: meta.length, items: items.length, lp: lp.length, warnings: warnings, date_from: config.DATE_FROM, date_to: config.DATE_TO },\n  config: {\n    brand: config.BRAND || '',\n    vat_rate: config.VAT_RATE || 0.23,\n    default_margin: config.DEFAULT_MARGIN || 0.10,\n    margin_rules: config.MARGIN_RULES || []\n  }\n} }];"
-      },
-      "id": "merger-node",
-      "name": "Python Bridge",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2400,
-        512
-      ],
-      "notes": "Consolidates all 4 streams + config for Python API."
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://money-printing-machine.onrender.com/process",
+        "url": "https://money-printing-machine.onrender.com/run_extraction",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
@@ -590,142 +415,6 @@
         ]
       ]
     },
-    "Validate Config": {
-      "main": [
-        [
-          {
-            "node": "Fetch Product Feed",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Fetch GA4 Landing Page",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Fetch GA4 Items",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Fetch Meta Ads",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Product Feed": {
-      "main": [
-        [
-          {
-            "node": "XML Parser",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "XML Parser": {
-      "main": [
-        [
-          {
-            "node": "Normalize Feed + Margins",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch GA4 Landing Page": {
-      "main": [
-        [
-          {
-            "node": "Normalize GA4 LP",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch GA4 Items": {
-      "main": [
-        [
-          {
-            "node": "Normalize GA4 Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Meta Ads": {
-      "main": [
-        [
-          {
-            "node": "Normalize Meta Ads",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Normalize Feed + Margins": {
-      "main": [
-        [
-          {
-            "node": "Python Bridge",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Normalize GA4 Items": {
-      "main": [
-        [
-          {
-            "node": "Python Bridge",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Normalize GA4 LP": {
-      "main": [
-        [
-          {
-            "node": "Python Bridge",
-            "type": "main",
-            "index": 2
-          }
-        ]
-      ]
-    },
-    "Normalize Meta Ads": {
-      "main": [
-        [
-          {
-            "node": "Python Bridge",
-            "type": "main",
-            "index": 3
-          }
-        ]
-      ]
-    },
-    "Python Bridge": {
-      "main": [
-        [
-          {
-            "node": "Python Brain (API)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Python Brain (API)": {
       "main": [
         [
@@ -753,6 +442,17 @@
         [
           {
             "node": "Trigger Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Config": {
+      "main": [
+        [
+          {
+            "node": "Python Brain (API)",
             "type": "main",
             "index": 0
           }

@@ -135,15 +135,19 @@ def calculate_gross_margin(row, default_margin, category_overrides, min_margin=N
         return min_margin if min_margin is not None else default_margin
 
 
-def assign_price_cluster(df, price_col='price_numeric'):
+def assign_price_cluster(df, price_col='price_numeric', margin_col='base_gross_margin', default_threshold=1.5):
     """
     Assigns price clusters to a DataFrame subset (usually passed per margin group).
     
     Logic:
     - Sort products by price DESC.
     - Start Cluster 1 with highest price Product A.
-    - Add subsequent products as long as Leader Price <= 1.5 * Current Product Price.
-      (Equivalent to: Current Product Price >= Leader / 1.5)
+    - Dynamic Threshold:
+      - If Gross Margin >= 30% -> Threshold = 1.30
+      - If Gross Margin < 30% -> Threshold = 1.0 + Gross Margin
+      - Safety floor for Threshold = 1.10
+    - Add subsequent products as long as Leader Price <= threshold_ratio * Current Product Price.
+      (Equivalent to: Current Product Price >= Leader / threshold_ratio)
     - If condition fails, start new Cluster with current product as Leader.
     
     Returns:
@@ -159,19 +163,35 @@ def assign_price_cluster(df, price_col='price_numeric'):
     temp_clusters = []
     curr_id = 1
     curr_leader = None
+    curr_threshold = default_threshold
     
-    for price in sub_df[price_col]:
+    for idx, row in sub_df.iterrows():
+        price = row[price_col]
+        margin = row.get(margin_col, 0.50) if margin_col in sub_df.columns else 0.50
+        if pd.isna(margin):
+            margin = 0.50
+            
         if curr_leader is None:
             curr_leader = price
+            # Calculate Dynamic Threshold based on Leader's margin
+            if margin >= 0.30:
+                curr_threshold = 1.30
+            else:
+                curr_threshold = max(1.10, 1.0 + margin)
         
-        # Condition: Leader Price must be > 1.5 * Product Price to BREAK cluster
-        # So we KEEP in cluster if Leader <= 1.5 * Product
-        # Which means: Product >= Leader / 1.5
-        threshold = curr_leader / 1.5
+        # Condition: Leader Price must be > threshold_ratio * Product Price to BREAK cluster
+        # So we KEEP in cluster if Leader <= threshold_ratio * Product
+        # Which means: Product >= Leader / threshold_ratio
+        threshold_price = curr_leader / curr_threshold
         
-        if price < threshold:
+        if price < threshold_price:
             curr_id += 1
             curr_leader = price
+            # Recalculate Dynamic Threshold for new Leader
+            if margin >= 0.30:
+                curr_threshold = 1.30
+            else:
+                curr_threshold = max(1.10, 1.0 + margin)
         
         temp_clusters.append(curr_id)
         
