@@ -519,14 +519,21 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     
     # --- DIMENSION 3: GA4 LANDING PAGE (Traffic/Conversion) ---
     lp_df = pd.DataFrame()
-    if prop_id and os.path.exists(GA4_CREDS_PATH):
-        try: lp_df = fetch_ga4_data(GA4_CREDS_PATH, prop_id, limit=100000)
-        except: pass
+    if prop_id and GA4_CREDS_PATH and os.path.exists(GA4_CREDS_PATH):
+        print(f"[GA4] Attempting API Fetch for LP (Prop: {prop_id})")
+        try: lp_df = fetch_ga4_data(GA4_CREDS_PATH, prop_id, limit=200000)
+        except Exception as e: print(f"[GA4] LP API Error: {e}")
+    else:
+        print(f"[GA4] API Config Missing. CREDS_PATH: {GA4_CREDS_PATH}, exists: {os.path.exists(GA4_CREDS_PATH) if GA4_CREDS_PATH else False}")
+
     if lp_df.empty:
+        print("[GA4] Falling back to CSV for LP Data")
         lp_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_lp_freeform.csv") 
         if not os.path.exists(lp_path): lp_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_lp.csv")
         if not os.path.exists(lp_path): lp_path = os.path.join(input_dir, brand, f"ga4_landing_page.csv")
-        if os.path.exists(lp_path): lp_df = load_ga4_csv(lp_path)
+        if os.path.exists(lp_path): 
+            print(f"[GA4] Loading CSV: {lp_path}")
+            lp_df = load_ga4_csv(lp_path)
 
     if not lp_df.empty:
         lp_col = next((c for c in ['Landing page', 'Landing page + query string', 'landingPage'] if c in lp_df.columns), None)
