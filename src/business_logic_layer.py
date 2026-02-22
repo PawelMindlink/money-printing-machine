@@ -240,25 +240,52 @@ def apply_mece_waterfall(title: str, brand: str) -> str:
         return '18. Generyczny Humor & Catch-all'
 
     elif brand.lower() == 'iiyama':
-        # Gaming line (G-Master)
-        if any(x in t for x in ['g-master', 'gb', 'gb2', 'gb3', 'gb4', 'g2', 'g2770', 'g2771', 'gaming monitor', 'red eagle']): return '01. Gaming (G-Master)'
-        # Touch Open-Frame
-        if 'tf' in t.split()[0] if t.split() else False or 'open frame' in t or 'open-frame' in t: return '03. Touch Open-Frame (Integracja)'
-        # Infokioski / Retail Touch  
-        if any(x in t for x in ['tw', 'kiosk', 'infokiosk', 'pos system']): return '04. Infokioski & Retail'
-        # Touch Desktop (T-series monitors)
-        if t.startswith('iiyama t') and any(x in t for x in ['touch', 'dotykow', 'msc', 'mts']): return '05. Touch Biurkowy (POS/Pro)'
-        # Large Format Display / Digital Signage / Education
-        if any(x in t for x in ['lh', 'large format', 'digital signage', 'le32', 'le43', 'le55', 'le65', 'te43', 'te55', 'te65']): return '06. LFD (Digital Signage/Edukacja)'
-        # Uchwyty & Montaż (MD-WM, OMK series)
-        if any(x in t for x in ['md-wm', 'omk', 'uchwyt', 'ramię', 'ramie', 'bracket', 'wall mount', 'mounting kit', 'md-wlift']): return '07. Akcesoria: Uchwyty & Ramiona'
-        # Kable & Adaptery
-        if any(x in t for x in ['kabel', 'przewód', 'przewod', 'cable', 'hdmi', 'displayport', 'adapter', 'dp cable']): return '08. Akcesoria: Kable & Adaptery'
-        # Kamera, Audio, Rysiki
-        if any(x in t for x in ['kamera', 'webcam', 'audio', 'soundbar', 'stylus', 'uc-cam', 'rysik', 'pen']): return '09. Akcesoria: Audio, Kamera & Rysiki'
-        # ProLite — Office / Home monitors (broad catch for prolite + xb, xub, xu, xf, b, e series)
-        if any(x in t for x in ['prolite', 'xub', 'xb', 'xf', 'xe', 'x2', 'x3', 'b2', 'b3', 'e2', 'e3', 'monitor', 'iiyama']): return '02. Biuro & Dom (ProLite)'
-        return '10. Inne Akcesoria / Części'
+        # 1. Gaming (G-Master) → Gracz PC, zakup emocjonalny, refresh rate / input lag
+        if any(x in t for x in ['g-master', 'gb2', 'gb3', 'gb4', 'g2770', 'g2771', 'g2473', 'gaming monitor', 'red eagle', '144hz', '165hz', '240hz', 'g-sync', 'freesync']):
+            return '01. Gaming (G-Master)'
+        # 2. Office (ProLite biurowe) → WFH/freelancer/dział IT, zakup racjonalny
+        if any(x in t for x in ['xub', 'xb28', 'xb27', 'x2483', 'x2793', 'xu24', 'xu27', 'xu28', 'flickerfree', 'usb-c hub', 'docking', 'dual screen', 'ergotilt', 'height adjustable']):
+            return '02. Office (ProLite)'
+        # 3. ProGraphic → Grafik/fotograf/video editor, Delta-E, kalibracja, sRGB/DCI-P3
+        if any(x in t for x in ['x3', 'xb3', 'qu27', 'coloredge', 'adobe rgb', 'dci-p3', 'deltae', 'delta e', 'kalibracja', 'calibra', 'pantone', '4k uhd', 'ips black', 'nano ips']):
+            return '03. ProGraphic (Kolory & Precyzja)'
+        # 4. Gwarancja 5 lat → Firma/B2B/IT manager, TCO, niezawodność
+        if any(x in t for x in ['5 year', '5-year', '5 lat', '5-letni', 'warranty 5', 'gwarancja 5', 'prolite xb2888', 'prolite x2888', 'b2888', 'x2888']):
+            return '04. Gwarancja 5 lat (B2B Fleet)'
+        # 5. Touch Biurkowy (POS) → Recepcja/hotel/restauracja, montaż na ladzie
+        if any(x in t for x in ['t1931', 't2234', 't2234msc', 't2252', 't2253mts', 't2454msc', 't1731', 'msc', 'mts', 'touch desktop', 'pos touch']):
+            return '05. Touch Biurkowy (POS/Pro)'
+        # 6. Touch Open-Frame (Integracja) → Integrator AV, komponent do obudowy, OEM
+        if any(x in t for x in ['tf', 'open frame', 'open-frame', 'tf1534', 'tf1215', 'tf2415', 'tf2234', 'pcap', 'capacitive panel']):
+            return '06. Touch Open-Frame (Integracja OEM)'
+        # 7. Signage → Marketing/hotel/sklep, wyświetlanie contentu, nie dotykowy
+        if any(x in t for x in ['lh', 'digital signage', 'ds55', 'ds65', 'ds43', 'signage', '24/7', 'brightness 700', 'landscape display', 'commercial display']):
+            return '07. Signage (Digital Out-of-Home)'
+        # 8. IFP / Tablice Interaktywne → Szkoła/sala konferencyjna, Google EDLA, rysik
+        if any(x in t for x in ['te43', 'te55', 'te65', 'te75', 'ifp', 'interactive', 'edla', 'tablica interaktywna', 'whiteboard', 'flip', 'stylus board', 'conference board']):
+            return '08. IFP / Tablice Interaktywne (Edu/Corp)'
+        # 9. Infokioski → Galeria/muzeum/lotnisko, gotowe urządzenie, brak integracji IT
+        if any(x in t for x in ['tw', 'kiosk', 'infokiosk', 'tw1023', 'tw1323', 'tw2324', 'pos system', 'self-service', 'total solution']):
+            return '09. Infokioski & Retail (Gotowe Stanowisko)'
+        # 10. Montaż & Akcesoria AV → Uchwyt/ramię/wózek, zakup uzupełniający
+        if any(x in t for x in ['md-wm', 'omk', 'uchwyt', 'ramię', 'ramie', 'bracket', 'wall mount', 'mounting kit', 'md-wlift', 'wózek', 'wozek', 'trolley', 'floor stand', 'ceiling mount']):
+            return '10. Montaż & Akcesoria AV'
+        # 11. Kable & Adaptery → USB-C/HDMI, zakup funkcjonalny małej wartości
+        if any(x in t for x in ['kabel', 'przewód', 'przewod', 'cable', 'hdmi', 'displayport', 'adapter', 'dp cable', 'usb-c cable', 'stacja dokująca', 'dock']):
+            return '11. Kable & Adaptery'
+        # 12. Folie & Filtry → RODO/open-space, filtr prywatyzujący, compliance
+        if any(x in t for x in ['folia', 'filtr', 'privacy filter', 'anti-glare film', 'screen protector', 'rodo', 'prywatyzujący', 'matująca']):
+            return '12. Folie & Filtry (Privacy/RODO)'
+        # 13. Wirtualna Gazetka → Sieć handlowa/franczyzobiorca, pakiet HW+SW
+        if any(x in t for x in ['wirtualna gazetka', 'digital menu', 'menu board', 'retail solution', 'content management', 'cms screen', 'smart signage software']):
+            return '13. Wirtualna Gazetka (Retail HW+SW)'
+        # 14. Outlet → Każdy, wyzwalacz cenowy, promocja wyprzedażowa
+        if any(x in t for x in ['outlet', 'wyprzedaż', 'wyprzedaz', 'b-grade', 'b grade', 'refurb', 'ostatnie sztuki', 'ex-demo', 'open box']):
+            return '14. Outlet (Okazja Cenowa)'
+        # Fallback – ProLite niespecyficzne + reszta monitorów
+        if any(x in t for x in ['prolite', 'iiyama', 'monitor', 'xf', 'xe', 'b2', 'e2', 'bu', 'x2', 'b3', 'e3']):
+            return '02. Office (ProLite)'
+        return '10. Montaż & Akcesoria AV'
         
     return '00. Catch-All Default'
 
