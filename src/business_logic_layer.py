@@ -208,6 +208,61 @@ def assign_price_cluster(df, price_col='price_numeric', margin_col='base_gross_m
     return sub_df['temp_cluster_id'].map(id_to_label)
 
 
+def apply_mece_waterfall(title: str, brand: str) -> str:
+    """
+    Applies brand-specific MECE (Mutually Exclusive Collectively Exhaustive) 
+    waterfall logic to categorise products into Creative Contexts (Ad Sets).
+    """
+    if pd.isna(title):
+        title = ""
+    t = str(title).lower()
+    
+    if brand.lower() == 'koszulkowy':
+        if any(k in t for k in ['1670', 'adamczycha', 'jan paweł']): return '01. Popkultura: 1670 (Tribal)'
+        if any(k in t for k in ['ranczo', 'ławeczk', 'solejuk', 'wilkowyj']): return '02. Popkultura: Ranczo (Tribal)'
+        if any(k in t for k in ['brainrot', 'skibidi', 'roblox', 'sigma']): return '03. Popkultura: Gen Z / Brainrot'
+        if any(k in t for k in ['gracz', 'gaming', 'minecraft', 'pad', 'wiedźmin', 'witcher', 'cs', 'lol']): return '04. Popkultura: Gamer & Esport'
+        if any(k in t for k in ['star wars', 'gwiezdne wojny', 'harry potter', 'marvel', 'avengers', 'batman', 'anime', 'manga', 'naruto', 'dragon ball']): return '05. Popkultura: Seriale, Filmy & Anime'
+        if any(x in t for x in ['rolnik', 'traktor', 'kura', 'jajka', 'agroturystyka']): return '06. Tożsamość: Agrokultura & Wieś'
+        if any(x in t for x in ['mors', 'morsowanie', 'zima', 'zimno']): return '07. Tożsamość: Morsy & Ekstremalne'
+        if any(x in t for x in ['motocykl', 'motor', 'kierowc', 'tir', 'mechanik', 'samochód', 'auto', 'fso', 'prl']): return '08. Tożsamość: Motoryzacja & Maszyny'
+        if any(x in t for x in ['rower', 'siatków', 'góry', 'bieganie', 'piłka', 'sport', 'kulturystyka', 'dzik']): return '09. Tożsamość: Sport & Aktywność'
+        if any(x in t for x in ['wędk', 'ryby', 'karp', 'szczupak', 'sum']): return '10. Tożsamość: Wędkarstwo'
+        if any(x in t for x in ['pies', 'kot', 'koniarz', 'zwierz', 'jamnik', 'owczarek', 'koty']): return '11. Tożsamość: Zwierzęta (Pets)'
+        if any(x in t for x in ['nauczyciel', 'strażak', 'pielęgniar', 'lekarz', 'programist', 'informatyk', 'budowlan', 'policjant', 'wojsk', 'kuch', 'szef kuchni', 'szef']): return '12. Tożsamość: Zawody Profesjonalne'
+        if any(x in t for x in ['urodzin', '18 lat', '30 lat', '40 lat', '50 lat', '60 lat', 'narodziny legendy', 'starzeć']): return '13. Okazje: Urodziny & Wiek'
+        if any(x in t for x in ['kawalersk', 'panieńsk', 'ślub', 'wesele', 'kawaler', 'panna młoda']): return '14. Okazje: Ślub & Kawalerskie'
+        if any(x in t for x in ['święta', 'mikołaj', 'boże narodzenie', 'jajko', 'wielkanoc']): return '15. Okazje: Święta & Sezonowe'
+        if any(x in t for x in ['tata', 'taty', 'ojc', 'mama', 'mamy', 'matk', 'dziadk', 'babc', 'dzień ojca', 'dzień matki', 'dla taty', 'dla mamy', 'babcia', 'dziadek']): return '16. Relacje: Rodzice & Dziadkowie'
+        if any(x in t for x in ['mąż', 'męż', 'żon', 'chłop', 'kochan', 'dziewczyn', 'walentynk', 'rocznic', 'brat', 'siostr', 'synow', 'córk', 'syn', 'przyjaciel', 'kolega', 'koleżank', 'prezent dla', 'najlepszy przyjaciel']): return '17. Relacje: Dla Par (Romantyczne)'
+        # Canvas Ads / unidentified Meta URLs → flag separately
+        if 'canvas doc' in t or t.strip().replace(' ', '').isdigit(): return '00. Meta Canvas / Nieidentyfikowane'
+        return '18. Generyczny Humor & Catch-all'
+
+    elif brand.lower() == 'iiyama':
+        # Gaming line (G-Master)
+        if any(x in t for x in ['g-master', 'gb', 'gb2', 'gb3', 'gb4', 'g2', 'g2770', 'g2771', 'gaming monitor', 'red eagle']): return '01. Gaming (G-Master)'
+        # Touch Open-Frame
+        if 'tf' in t.split()[0] if t.split() else False or 'open frame' in t or 'open-frame' in t: return '03. Touch Open-Frame (Integracja)'
+        # Infokioski / Retail Touch  
+        if any(x in t for x in ['tw', 'kiosk', 'infokiosk', 'pos system']): return '04. Infokioski & Retail'
+        # Touch Desktop (T-series monitors)
+        if t.startswith('iiyama t') and any(x in t for x in ['touch', 'dotykow', 'msc', 'mts']): return '05. Touch Biurkowy (POS/Pro)'
+        # Large Format Display / Digital Signage / Education
+        if any(x in t for x in ['lh', 'large format', 'digital signage', 'le32', 'le43', 'le55', 'le65', 'te43', 'te55', 'te65']): return '06. LFD (Digital Signage/Edukacja)'
+        # Uchwyty & Montaż (MD-WM, OMK series)
+        if any(x in t for x in ['md-wm', 'omk', 'uchwyt', 'ramię', 'ramie', 'bracket', 'wall mount', 'mounting kit', 'md-wlift']): return '07. Akcesoria: Uchwyty & Ramiona'
+        # Kable & Adaptery
+        if any(x in t for x in ['kabel', 'przewód', 'przewod', 'cable', 'hdmi', 'displayport', 'adapter', 'dp cable']): return '08. Akcesoria: Kable & Adaptery'
+        # Kamera, Audio, Rysiki
+        if any(x in t for x in ['kamera', 'webcam', 'audio', 'soundbar', 'stylus', 'uc-cam', 'rysik', 'pen']): return '09. Akcesoria: Audio, Kamera & Rysiki'
+        # ProLite — Office / Home monitors (broad catch for prolite + xb, xub, xu, xf, b, e series)
+        if any(x in t for x in ['prolite', 'xub', 'xb', 'xf', 'xe', 'x2', 'x3', 'b2', 'b3', 'e2', 'e3', 'monitor', 'iiyama']): return '02. Biuro & Dom (ProLite)'
+        return '10. Inne Akcesoria / Części'
+        
+    return '00. Catch-All Default'
+
+
 def calculate_cluster_stats(df, price_col='calc_gross_price', margin_rate_col='base_gross_margin', vat_rate=0.23):
     """
     Calculates bidding caps for a price cluster.

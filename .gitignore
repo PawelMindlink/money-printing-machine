@@ -40,3 +40,7 @@ htmlcov/
 *.cert
 *.token
 *.secret
+.archive_tests/
+git_diff_output.txt
+git_status_output.txt
+git_log_output.txt

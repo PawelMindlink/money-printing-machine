@@ -6,6 +6,9 @@ import business_logic_layer as bl
 from ga4_api_client import fetch_ga4_data, fetch_ga4_items
 from data_loader import load_ga4_csv, parse_product_feed_xml
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # GA4 Credentials — set GA4_CREDS_PATH in your .env file (see .env.template)
 GA4_CREDS_PATH = os.environ.get("GA4_CREDS_PATH", "")
 
@@ -220,7 +223,7 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
             subset['price_numeric'] = subset['calc_gross_price']
             subset_valid = subset[subset['price_numeric'] > 0].copy()
             if not subset_valid.empty:
-                clusters = bl.assign_price_cluster(subset_valid, price_col='price_numeric', threshold_ratio=cluster_threshold)
+                clusters = bl.assign_price_cluster(subset_valid, price_col='price_numeric', default_threshold=cluster_threshold)
                 df.loc[subset_valid.index, 'calc_price_cluster'] = clusters.astype(str)
 
     # Cluster Stats → Bid/Cost Caps
@@ -258,24 +261,43 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
     df['calc_frequency'] = df.apply(lambda r: bl.calculate_frequency(r.get('ga4lp_purchases', 0), r.get('ga4lp_first_time_purchasers', 0)), axis=1)
     df['calc_gppv'] = df.apply(lambda r: bl.calculate_gppv(r.get('calc_gross_profit_item', 0), r.get('ga4item_views', 0)), axis=1)
 
-    # Thresholds (P75)
+    # ── MSC V3: Pure Product Demand Thresholds ──
+    # Sum of LP purchases (verified checkouts) and item-level purchases
+    df['_total_tx'] = df.get('ga4lp_purchases', pd.Series(0, index=df.index)).fillna(0) + \
+                      df.get('ga4item_purchases', pd.Series(0, index=df.index)).fillna(0)
+    
+    non_zero_tx = df[df['_total_tx'] > 0]['_total_tx']
+    P90_TX = non_zero_tx.quantile(0.90) if len(non_zero_tx) > 0 else 0
+    P75_TX = non_zero_tx.quantile(0.75) if len(non_zero_tx) > 0 else 0
+    
+    # Establish minimum thresholds for significance
+    THRESHOLD_A = max(15, int(P90_TX))  # Bestseller
+    THRESHOLD_B = max(5, int(P75_TX))   # Strong Seller
+
+    # Meta thresholds
     P75_VOL_META = get_p75(df['meta_revenue'])
     P75_EFF_META = get_p75(df['calc_contribution_profit'])
-    P75_VOL_GA = get_p75(df['ga4lp_sessions'])
-    P75_EFF_GA = get_p75(df['calc_gpps'])
-    P75_VOL_ITEM = get_p75(df['ga4item_views'])
-    P75_EFF_ITEM = get_p75(df['calc_gppv'])
-    AVG_CR = (df['ga4lp_purchases'].sum() / df['ga4lp_sessions'].sum()) if df['ga4lp_sessions'].sum() > 0 else 0.01
     MIN_META_TRANS = 10
-    SIGNIFICANCE_FLOOR = 300
-    MIN_ORGANIC_SESSIONS = max(SIGNIFICANCE_FLOOR, min(2000, 100 / (AVG_CR if AVG_CR > 0 else 0.01)))
+
+    # Traffic distribution for CRO anomalies
+    P75_VOL_GA = get_p75(df['ga4lp_sessions'])
 
     threshold_params = {
+        'THRESHOLD_A': THRESHOLD_A, 'THRESHOLD_B': THRESHOLD_B,
+        'P75_VOL_META': P75_VOL_META, 'P75_EFF_META': P75_EFF_META,
+        'P75_VOL_GA': P75_VOL_GA, 'MIN_META_TRANS': MIN_META_TRANS,
+        'MIN_LP_SESSIONS': 300, 'vat': vat
+    }
+
+    threshold_params = {
+        'P75_TX': P75_TX, 'MIN_DEMAND_TX': MIN_DEMAND_TX,
         'P75_VOL_META': P75_VOL_META, 'P75_EFF_META': P75_EFF_META,
         'P75_VOL_GA': P75_VOL_GA, 'P75_EFF_GA': P75_EFF_GA,
         'P75_VOL_ITEM': P75_VOL_ITEM, 'P75_EFF_ITEM': P75_EFF_ITEM,
         'AVG_CR': AVG_CR, 'MIN_META_TRANS': MIN_META_TRANS,
-        'MIN_ORGANIC_SESSIONS': MIN_ORGANIC_SESSIONS, 'vat': vat
+        'MIN_LP_SESSIONS': 300, 'MIN_ITEM_VIEWS': 50,
+        'top_categories': _top_categories, 'category_col': _cat_col,
+        'vat': vat,
     }
 
     return df, threshold_params
@@ -283,66 +305,93 @@ def join_and_enrich_data(feed_df, items_df, lp_df, meta_df, params):
 
 def run_pipeline_logic(df, params):
     """
-    Apply MSC-ALGO Waterfall classification & compute final output columns.
+    Apply MSC-ALGO V3 (Pure Product Meritocracy).
+
+    WHAT (Product Merit) -> Determines 1-8 priority queue.
+    HOW (Ad Context) -> Handled downstream by creative_context grouping.
+    
+    Dimensions assessed:
+    1. Demand: A (Bestseller), B (Strong Seller), C (Low Seller), D (Zero Sales)
+    2. Meta Status: Winner, Loser, Testing, Untested
+    3. Traffic Leak: High traffic with 0 conversions
     """
     vat = params.get('vat', 0.23)
+    THRESHOLD_A = params.get('THRESHOLD_A', 15)
+    THRESHOLD_B = params.get('THRESHOLD_B', 5)
     P75_VOL_META = params.get('P75_VOL_META', 1)
     P75_EFF_META = params.get('P75_EFF_META', 1)
     P75_VOL_GA = params.get('P75_VOL_GA', 1)
-    P75_EFF_GA = params.get('P75_EFF_GA', 1)
-    P75_VOL_ITEM = params.get('P75_VOL_ITEM', 1)
-    P75_EFF_ITEM = params.get('P75_EFF_ITEM', 1)
     MIN_META_TRANS = params.get('MIN_META_TRANS', 10)
-    MIN_ORGANIC_SESSIONS = params.get('MIN_ORGANIC_SESSIONS', 300)
+    MIN_LP_SESSIONS = params.get('MIN_LP_SESSIONS', 300)
+
+    # Ensure _total_tx exists in case pipeline skips threshold step
+    if '_total_tx' not in df.columns:
+        df['_total_tx'] = df.get('ga4lp_purchases', pd.Series(0, index=df.index)).fillna(0) + \
+                          df.get('ga4item_purchases', pd.Series(0, index=df.index)).fillna(0)
 
     def run_msc_algo(row):
-        flags = []
-        meta_purchases = row.get('meta_purchases', 0)
-        contribution_profit = row.get('calc_contribution_profit', 0)
-        meta_revenue = row.get('meta_revenue', 0)
-        if pd.notna(meta_purchases) and meta_purchases >= MIN_META_TRANS:
-            if pd.notna(contribution_profit) and contribution_profit > 0:
-                if pd.notna(meta_revenue) and meta_revenue >= P75_VOL_META and contribution_profit >= P75_EFF_META:
-                    return 1, "PROVEN_STAR", "High ad revenue + profit"
-                else:
-                    return 2, "PROVEN_COW", "Profitable ads, moderate scale"
-            else:
-                flags.append("META_LOSER")
-        ga4lp_sessions = row.get('ga4lp_sessions', 0)
-        calc_gpps = row.get('calc_gpps', 0)
-        if pd.notna(ga4lp_sessions) and ga4lp_sessions >= MIN_ORGANIC_SESSIONS:
-            is_high_vol = ga4lp_sessions >= P75_VOL_GA
-            is_high_eff = pd.notna(calc_gpps) and calc_gpps >= P75_EFF_GA
-            if is_high_vol and is_high_eff:
-                if "META_LOSER" in flags:
-                    return 3, "RECOVERY_LAUNCH", "High organic demand, fix ads"
-                else:
-                    return 3, "NEW_STAR_LAUNCH", "High organic demand, untapped"
-            elif is_high_vol and not is_high_eff:
-                return 4, "FIX_LANDING_PAGE", "High traffic, low conversion"
-            elif not is_high_vol and is_high_eff:
-                return 5, "SCALE_UP", "Good CR, needs more traffic"
-            else:
-                flags.append("LP_FAILURE")
-        if row.get('calc_entity_type') != "PRODUCT":
-            return 8, "IGNORE", "Non-product page"
-        if row.get('ga4item_views', 0) >= MIN_ORGANIC_SESSIONS:
-            is_high_vol = row['ga4item_views'] >= P75_VOL_ITEM
-            is_high_eff = row.get('calc_gppv', 0) >= P75_EFF_ITEM
-            if is_high_vol and is_high_eff:
-                return 6, "DIRECT_TO_PDP", "High PDP views + profit"
-            elif not is_high_vol and is_high_eff:
-                return 7, "FEED_DPA", "Profitable, low PDP visibility"
-            elif is_high_vol and not is_high_eff:
-                return 8, "IGNORE", "High views, no purchases"
-        return 8, "IGNORE", "Insufficient data"
+        total_tx = row.get('_total_tx', 0) or 0
+        meta_purchases = row.get('meta_purchases', 0) or 0
+        meta_cp = row.get('calc_contribution_profit', 0) or 0
+        meta_spend = row.get('meta_spend', 0) or 0
+        ga4_sessions = row.get('ga4lp_sessions', 0) or 0
+        
+        # Determine Demand Tag
+        if total_tx >= THRESHOLD_A: demand = 'A'
+        elif total_tx >= THRESHOLD_B: demand = 'B'
+        elif total_tx >= 1: demand = 'C'
+        else: demand = 'D'
+            
+        # Determine Meta Status Tag
+        if meta_purchases >= MIN_META_TRANS and meta_cp > 0:
+            meta_status = 'WINNER'
+        elif meta_spend > 100 and meta_cp < 0:
+            meta_status = 'LOSER'
+        elif meta_spend > 0:
+            meta_status = 'TESTING'
+        else:
+            meta_status = 'UNTESTED'
+            
+        # Exceptions
+        if row.get('calc_entity_type', 'PRODUCT') != "PRODUCT":
+            return 8, "NON_PRODUCT", "Non-product page"
+        
+        # Core Classification Matrix
+        if meta_status == 'WINNER' and demand in ['A', 'B']:
+            return 1, "SCALE_HERO", "Top Meta profit + Strong organic demand"
+            
+        if demand == 'A':
+            return 2, "ORGANIC_BESTSELLER", "Top 10% organic market volume"
+            
+        if demand == 'B':
+            return 3, "CATALOG_PROVEN", "Top 25% organic volume, robust catalog"
+            
+        # Only punish for Meta loss if it's NOT a bestseller naturally
+        if meta_status == 'LOSER' and demand in ['C', 'D']:
+            return 8, "DEAD_WEIGHT", "Proven Meta loss-maker with low organic demand"
+        elif meta_status == 'LOSER' and demand in ['A', 'B']:
+            # It loses money on ads, but sells organically. Put it in broad DPA, don't force manual ads.
+            return 6, "LONG_TAIL", "Organic winner but Meta loss-maker, keep in background DPA"
+            
+        if meta_status == 'WINNER' and demand in ['C', 'D']:
+            return 4, "META_MODERATE", "Profitable Meta ads, but low organic scale"
+            
+        if demand == 'D' and ga4_sessions >= max(MIN_LP_SESSIONS, P75_VOL_GA):
+            return 5, "TRAFFIC_LEAK", "High traffic volume, zero conversions"
+            
+        if demand == 'C':
+            return 6, "LONG_TAIL", "Occasional sales, broad DPA inclusion"
+            
+        if demand == 'D' and meta_status == 'UNTESTED':
+            return 7, "COLD_TEST", "Zero sales, untested on Meta"
+            
+        return 7, "COLD_TEST", "Fallback rule"
 
     if not df.empty:
         msc_results = df.apply(run_msc_algo, axis=1, result_type='expand')
         df['calc_priority'] = msc_results[0]
         df['calc_segment'] = msc_results[1]
         df['calc_reason'] = msc_results[2]
-        df.loc[df['calc_priority'] == 99, 'calc_priority'] = 4
         df['calc_is_actionable'] = df['calc_priority'].isin([1, 2, 3, 4, 5, 6, 7])
     else:
         df['calc_priority'] = pd.Series(dtype=int)
@@ -350,10 +399,18 @@ def run_pipeline_logic(df, params):
         df['calc_reason'] = pd.Series(dtype=str)
         df['calc_is_actionable'] = pd.Series(dtype=bool)
 
-    action_map = {1: "SCALE_SPEND", 2: "MAINTAIN_SPEND", 3: "NEW_AD_CREATIVES",
-                  4: "UX_PRICE_AUDIT", 5: "BROAD_AD_TARGETING", 6: "CONVERSION_CAMPAIGN",
-                  7: "CATALOG_ADS_DPA", 8: "IGNORE"}
-    df['calc_action_type'] = df['calc_priority'].map(action_map).fillna("IGNORE")
+    # Action types map directly to specific tasks independent of creative theme
+    action_map = {
+        1: "MANUAL_SCALE_ADS",      # Media Buyer: Scale budget on existing hero ads
+        2: "LAUNCH_NEW_CREATIVES",  # Copywriter: Top priority for new ad angles
+        3: "ADVANTAGE_PLUS_DPA",    # Media Buyer: Add reliably to catalog
+        4: "MAINTAIN_SPEND",        # Media Buyer: Don't scale, but keep running
+        5: "CRO_AUDIT_PDP",         # Developer: Fix the landing page
+        6: "BROAD_CATALOG_ONLY",    # Automated: Background DPA fodder
+        7: "TESTING_QUEUE",         # Copywriter: Test when core queue is empty
+        8: "EXCLUDE_FROM_ADS",      # Exclude entirely
+    }
+    df['calc_action_type'] = df['calc_priority'].map(action_map).fillna("EXCLUDE_FROM_ADS")
     df = _ensure_cols(df, ['calc_gross_price', 'bid_cap', 'cost_cap', 'meta_revenue', 'meta_spend',
                             'ga4lp_revenue', 'ga4lp_sessions', 'ga4lp_purchases', 'ga4lp_users',
                             'ga4item_views', 'ga4item_revenue', 'calc_contribution_profit', 'calc_gpps'])
@@ -366,7 +423,7 @@ def run_pipeline_logic(df, params):
     df['calc_roas'] = df['meta_revenue'] / df['meta_spend'].replace(0, 1)
     df['meta_class'] = df.apply(lambda r: bl.classify_meta_ads(r.get('calc_contribution_profit', 0), r.get('meta_spend', 0)), axis=1)
     ga4_thresholds = {
-        'min_activity': MIN_ORGANIC_SESSIONS,
+        'min_activity': MIN_LP_SESSIONS,
         'trans_75': get_p75(df['ga4lp_purchases']),
         'arpu_75': get_p75(df['calc_gpps'])
     }
@@ -431,6 +488,9 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         print(f"Warning: Feed missing. Using empty base.")
         df = pd.DataFrame(columns=['feed_id', 'feed_title', 'feed_brand', 'feed_category', 'feed_link', 'norm_url', 'path_key', 'feed_price_str'])
 
+    # --- ADD MECE CREATIVE CONTEXT ---
+    df['creative_context'] = df['feed_title'].apply(lambda t: bl.apply_mece_waterfall(t, brand))
+
     # --- LANDING PAGE NAMING (Part 1) ---
     # Will be applied later after merge, but ensuring columns exist
 
@@ -465,6 +525,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     if lp_df.empty:
         lp_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_lp_freeform.csv") 
         if not os.path.exists(lp_path): lp_path = os.path.join(input_dir, brand, f"{brand_l}_ga4_lp.csv")
+        if not os.path.exists(lp_path): lp_path = os.path.join(input_dir, brand, f"ga4_landing_page.csv")
         if os.path.exists(lp_path): lp_df = load_ga4_csv(lp_path)
 
     if not lp_df.empty:
@@ -599,6 +660,11 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         df.loc[mask_non_prod, 'feed_title'] = df.loc[mask_non_prod].apply(
             lambda r: bl.generate_friendly_name(r['norm_url'] if pd.notna(r['norm_url']) else r.get('feed_link', '')),
             axis=1
+        )
+        
+        # Apply MECE Context globally to the newly named Non-Products (URLs)
+        df.loc[mask_non_prod, 'creative_context'] = df.loc[mask_non_prod, 'feed_title'].apply(
+            lambda t: bl.apply_mece_waterfall(t, brand)
         )
 
     # Fill NA users/sessions
@@ -751,139 +817,34 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     # GPPV (Item) - Gross Profit Per View
     df['calc_gppv'] = df.apply(lambda row: bl.calculate_gppv(row['calc_gross_profit_item'], row.get('ga4item_views', 0)), axis=1)
 
-    # --- 4. DYNAMIC THRESHOLDS (P75 from History) ---
-    # We calculate quantiles based on non-zero data to capture "Good" performance
-    
-    def get_p75(series):
+    # --- 4 & 5. MSC-ALGO V3 (Pure Product Meritocracy) ---
+    # Build params dict from live data and delegate to the shared V3 logic function
+    def _get_p75(series):
         s = series[series > 0]
-        if s.empty:
-            return 1.0  # Minimum threshold to prevent division by zero
-        return max(1.0, s.quantile(0.75))  # At least 1.0 to avoid edge cases
-        
-    P75_VOL_META = get_p75(df['meta_revenue'])
-    P75_EFF_META = get_p75(df['calc_contribution_profit'])
-    
-    P75_VOL_GA = get_p75(df['ga4lp_sessions'])
-    P75_EFF_GA = get_p75(df['calc_gpps'])
-    
-    P75_VOL_ITEM = get_p75(df.get('ga4item_views', pd.Series([0])))
-    P75_EFF_ITEM = get_p75(df['calc_gppv'])
-    
-    # Significance Gates
-    AVG_CR = (df['ga4lp_purchases'].sum() / df['ga4lp_sessions'].sum()) if df['ga4lp_sessions'].sum() > 0 else 0.01
-    MIN_META_TRANS = 10
-    # Significance Floor: Ensure we have enough data (50 sesji/rok to ma┼éo -> threshold usually higher)
-    # Target 300 sessions (~25/mo) as a floor for "Activity"
-    SIGNIFICANCE_FLOOR = 300
-    MIN_ORGANIC_SESSIONS = max(SIGNIFICANCE_FLOOR, min(2000, 100 / (AVG_CR if AVG_CR > 0 else 0.01)))
-    
-    print(f"--- MSC-ALGO PARAMETERS ---")
-    print(f"P75 Meta Vol: {P75_VOL_META:.2f} | P75 Meta Eff: {P75_EFF_META:.2f}")
-    print(f"P75 GA Vol: {P75_VOL_GA:.2f} | P75 GA Eff: {P75_EFF_GA:.4f}")
-    print(f"Min Organic Sessions: {MIN_ORGANIC_SESSIONS:.0f}")
+        return max(1.0, s.quantile(0.75)) if not s.empty else 1.0
 
-    # --- 5. MSC-ALGO CORE LOGIC (Waterfall) ---
+    df['_total_tx'] = df.get('ga4lp_purchases', pd.Series(0, index=df.index)).fillna(0) + \
+                      df.get('ga4item_purchases', pd.Series(0, index=df.index)).fillna(0)
+    P75_TX = _get_p75(df['_total_tx'])
     
-    def run_msc_algo(row):
-        flags = []
-        
-        # --- PHASE 1: META ADS FILTRATION ---
-        meta_purchases = row.get('meta_purchases', 0)
-        contribution_profit = row.get('calc_contribution_profit', 0)
-        meta_revenue = row.get('meta_revenue', 0)
-        
-        # Null-safe comparison
-        if pd.notna(meta_purchases) and meta_purchases >= MIN_META_TRANS:
-            if pd.notna(contribution_profit) and contribution_profit > 0:
-                # Profitable
-                if pd.notna(meta_revenue) and meta_revenue >= P75_VOL_META and contribution_profit >= P75_EFF_META:
-                    return 1, "PROVEN_STAR", "High ad revenue + profit"
-                else:
-                    return 2, "PROVEN_COW", "Profitable ads, moderate scale"
-            else:
-                # Unprofitable (CM <= 0)
-                flags.append("META_LOSER")
-                # Fall through to Phase 2
-        
-        # --- PHASE 2: GA4 LANDING PAGE FILTRATION ---
-        ga4lp_sessions = row.get('ga4lp_sessions', 0)
-        calc_gpps = row.get('calc_gpps', 0)
-        
-        if pd.notna(ga4lp_sessions) and ga4lp_sessions >= MIN_ORGANIC_SESSIONS:
-            is_high_vol = ga4lp_sessions >= P75_VOL_GA
-            is_high_eff = pd.notna(calc_gpps) and calc_gpps >= P75_EFF_GA
-            
-            if is_high_vol and is_high_eff:
-                # Scenario A: High Vol + High Eff
-                if "META_LOSER" in flags:
-                    return 3, "RECOVERY_LAUNCH", "High organic demand, fix ads"
-                else:
-                    return 3, "NEW_STAR_LAUNCH", "High organic demand, untapped"
-            
-            elif is_high_vol and not is_high_eff:
-                # Scenario B: High Vol + Low Eff -> FIX IT
-                return 4, "FIX_LANDING_PAGE", "High traffic, low conversion"
-                
-            elif not is_high_vol and is_high_eff:
-                # Scenario C: Low Vol + High Eff -> SCALE IT
-                return 5, "SCALE_UP", "Good CR, needs more traffic"
-                
-            else:
-                # Scenario D: Low Vol + Low Eff -> DOG
-                flags.append("LP_FAILURE")
-                # Fall through to Phase 3
-        
-        # --- PHASE 3: GA4 ITEM FILTRATION ---
-        
-        # Critical Check: Only analyze ITEM data for actual PRODUCTS
-        if row.get('calc_entity_type') != "PRODUCT":
-            return 8, "IGNORE", "Non-product page"
-
-        if row.get('ga4item_views', 0) >= MIN_ORGANIC_SESSIONS:
-            is_high_vol = row['ga4item_views'] >= P75_VOL_ITEM
-            is_high_eff = row['calc_gppv'] >= P75_EFF_ITEM
-            
-            if is_high_vol and is_high_eff:
-                # Scenario E: Hidden Star
-                return 6, "DIRECT_TO_PDP", "High PDP views + profit"
-                
-            elif not is_high_vol and is_high_eff:
-                # Scenario F: Hidden Gem
-                return 7, "FEED_DPA", "Profitable, low PDP visibility"
-                
-            elif is_high_vol and not is_high_eff:
-                # Scenario G: Window Shopping
-                return 8, "IGNORE", "High views, no purchases"
-                
-        return 8, "IGNORE", "Insufficient data"
-
-
-    # Apply Logic
-    msc_results = df.apply(run_msc_algo, axis=1, result_type='expand')
-    df['calc_priority'] = msc_results[0]
-    df['calc_segment'] = msc_results[1]
-    df['calc_reason'] = msc_results[2]
-    
-    # Priority Remapping & Actionable Flags
-    # Map 99 (FIX_LP) to 4 for better sorting. Rest of priorities remain.
-    df.loc[df['calc_priority'] == 99, 'calc_priority'] = 4
-    
-    # Define Actionability
-    df['calc_is_actionable'] = df['calc_priority'].isin([1, 2, 3, 4, 5, 6, 7])
-    
-    # Define Action Type
-    action_map = {
-        1: "SCALE_SPEND",
-        2: "MAINTAIN_SPEND",
-        3: "NEW_AD_CREATIVES",
-        4: "UX_PRICE_AUDIT",
-        5: "BROAD_AD_TARGETING",
-        6: "CONVERSION_CAMPAIGN",
-        7: "CATALOG_ADS_DPA",
-        8: "IGNORE"
+    params_v3 = {
+        'vat': vat,
+        'THRESHOLD_A': max(1, int(P75_TX * 2)),   # Top 10% proxy
+        'THRESHOLD_B': max(1, int(P75_TX)),         # Top 25% proxy
+        'P75_TX': P75_TX,
+        'P75_VOL_META': _get_p75(df['meta_revenue']),
+        'P75_EFF_META': _get_p75(df['calc_contribution_profit']),
+        'P75_VOL_GA': _get_p75(df['ga4lp_sessions']),
+        'MIN_META_TRANS': 10,
+        'MIN_LP_SESSIONS': 300,
     }
-    df['calc_action_type'] = df['calc_priority'].map(action_map).fillna("IGNORE")
-    # 6. Actionable Caps (Standard)
+    
+    print(f"--- MSC-ALGO V3 PARAMETERS ---")
+    print(f"P75_TX: {P75_TX:.1f} | THRESHOLD_A: {params_v3['THRESHOLD_A']} | THRESHOLD_B: {params_v3['THRESHOLD_B']}")
+    
+    df = run_pipeline_logic(df, params_v3)
+    
+    # --- 6. ADDITIONAL METRICS (post V3 classification) ---
     df['calc_net_price'] = df['calc_gross_price'] / (1 + vat)
     
     # Renaming for export consistency with new logic
@@ -903,12 +864,12 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     
     # GA4 Classification thresholds
     ga4_thresholds = {
-        'min_activity': MIN_ORGANIC_SESSIONS,
-        'trans_75': get_p75(df['ga4lp_purchases']),
-        'arpu_75': get_p75(df['calc_gpps'])
+        'min_activity': 300,
+        'trans_75': _get_p75(df['ga4lp_purchases']),
+        'arpu_75': _get_p75(df['calc_gpps'])
     }
     df['ga4_class'] = df.apply(lambda r: bl.classify_ga4_product(
-        r['ga4lp_sessions'], r['ga4lp_purchases'], r['calc_gpps'], ga4_thresholds
+        r.get('ga4lp_sessions', 0), r.get('ga4lp_purchases', 0), r.get('calc_gpps', 0), ga4_thresholds
     ), axis=1)
     
     # Efficiency metrics
@@ -923,7 +884,6 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     
     # Sort by Priority
     df.sort_values(by=['calc_priority', 'calc_contribution_profit'], ascending=[True, False], inplace=True)
-    
     # Final Export Column Update
     final_cols = [
         # Core Identifiers
@@ -944,7 +904,9 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         'ga4lp_sessions', 'ga4lp_revenue', 'ga4lp_purchases', 'ga4lp_first_time_purchasers',
         'ga4item_views', 'ga4item_revenue',
         # Technical/Debug
-        'calc_net_price', 'calc_bid_cap', 'calc_cost_cap', 'cluster_avg_margin'
+        'calc_net_price', 'calc_bid_cap', 'calc_cost_cap', 'cluster_avg_margin',
+        # Ad Context — appended last as enrichment column
+        'creative_context',
     ]
     
     
