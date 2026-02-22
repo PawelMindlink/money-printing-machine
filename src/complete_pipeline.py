@@ -489,7 +489,12 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         df = pd.DataFrame(columns=['feed_id', 'feed_title', 'feed_brand', 'feed_category', 'feed_link', 'norm_url', 'path_key', 'feed_price_str'])
 
     # --- ADD MECE CREATIVE CONTEXT ---
-    df['creative_context'] = df['feed_title'].apply(lambda t: bl.apply_mece_waterfall(t, brand))
+    df['creative_context'] = df.apply(
+        lambda r: bl.apply_mece_waterfall(
+            str(r.get('feed_title', '')) + " " + str(r.get('feed_product_type', '')) + " " + str(r.get('feed_category', '')), 
+            brand
+        ), axis=1
+    )
 
     # --- LANDING PAGE NAMING (Part 1) ---
     # Will be applied later after merge, but ensuring columns exist
@@ -670,8 +675,11 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         )
         
         # Apply MECE Context globally to the newly named Non-Products (URLs)
-        df.loc[mask_non_prod, 'creative_context'] = df.loc[mask_non_prod, 'feed_title'].apply(
-            lambda t: bl.apply_mece_waterfall(t, brand)
+        df.loc[mask_non_prod, 'creative_context'] = df.loc[mask_non_prod].apply(
+            lambda r: bl.apply_mece_waterfall(
+                str(r.get('feed_title', '')) + " " + str(r.get('feed_product_type', '')) + " " + str(r.get('feed_category', '')), 
+                brand
+            ), axis=1
         )
 
     # Fill NA users/sessions
