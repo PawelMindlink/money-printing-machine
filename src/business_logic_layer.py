@@ -293,6 +293,35 @@ def apply_mece_waterfall(title: str, brand: str) -> str:
     return '00. Catch-All Default'
 
 
+def map_personas(mece_category: str) -> str:
+    """
+    Map MECE product categories (Product Sets) into recommended Meta Ad Set Personas
+    to avoid Ad Set Creative Bleed and ensure highly targeted copy without fragmenting the XML feed.
+    """
+    if pd.isna(mece_category) or not isinstance(mece_category, str):
+        return ""
+        
+    mapping = {
+        '04. Touch Biurkowy': 'Retail & QSR, Healthcare, Hospitality',
+        '05. Touch Open-Frame': 'Producent Maszyn (OEM), Retail & QSR, Healthcare, Muzea & Wystawy',
+        '06. Signage': 'Retail & QSR, Nieruchomości & Deweloperzy, Hotele & Lobby, Korporacje (Komunikacja Wewn.)',
+        '08. IFP / Tablice (Biznes': 'Korporacje & Sale Konferencyjne, Hotele (Centra Konferencyjne)',
+        '07. IFP / Tablice (Edukacja': 'Szkoły & Edukacja Publiczna, Edukacja Prywatna',
+        '09. Infokioski': 'Retail & QSR, Healthcare, Muzea & Wystawy, Przestrzenie Publiczne',
+        '10. Wirtualna Gazetka': 'Retail & QSR',
+        '03. ProGraphic': 'Graficy & Artyści, Architekci',
+        '01. Gaming': 'Gracze (B2C)',
+        '02. Office': 'WFH, Pracownicy Biurowi (B2B)'
+    }
+    
+    # Return matched personas, else return empty or default for accessories
+    for key, output in mapping.items():
+        if key in mece_category:
+            return output
+            
+    return "Mass Market / Uzupełniające"
+
+
 def calculate_cluster_stats(df, price_col='calc_gross_price', margin_rate_col='base_gross_margin', vat_rate=0.23):
     """
     Calculates bidding caps for a price cluster.
