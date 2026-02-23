@@ -302,13 +302,13 @@ def map_personas(mece_category: str) -> str:
         return ""
         
     mapping = {
-        '04. Touch Biurkowy': 'Kasy & Restauracje (QSR), Prywatne Kliniki & Apteki, Hotele (Recepcje)',
-        '05. Touch Open-Frame': 'Producent Maszyn (OEM), Kioski Samoobsługowe (Integratorzy), Muzea & Wystawy',
-        '06. Signage': 'Sieci Handlowe & Franczyzy, Nieruchomości & Deweloperzy, Hotele & Lobby, Kluby Fitness & Salony Beauty, Korporacje (HR/Komunikacja)',
+        '04. Touch Biurkowy': 'Gastronomia (QSR), Sklepy Retail, Prywatne Kliniki & Apteki, Hotele (Recepcje)',
+        '05. Touch Open-Frame': 'Producent Maszyn (OEM), Integratorzy IT, Muzea & Wystawy',
+        '06. Signage': 'Sklepy Retail, Gastronomia (QSR), Nieruchomości & Deweloperzy, Hotele & Lobby, Kluby Fitness, Salony Beauty & SPA, Korporacje (HR/Komunikacja)',
         '08. IFP / Tablice (Biznes': 'Korporacje & Sale Konferencyjne, Szkoły Językowe & Szkoleniowcy, Hotele (Centra Konferencyjne)',
         '07. IFP / Tablice (Edukacja': 'Szkoły Publiczne, Uczelnie Wyższe, Szkoły Prywatne',
         '09. Infokioski': 'Prywatne Kliniki & Przychodnie, Muzea & Wystawy, Galerie Handlowe (Zarządcy), Salony Beauty & SPA',
-        '10. Wirtualna Gazetka': 'Sieci Gastronomiczne (QSR), Franczyzy Retail',
+        '10. Wirtualna Gazetka': 'Gastronomia (QSR), Sklepy Retail',
         '03. ProGraphic': 'Studia Graficzne & Agencje Reklamowe, Architekci & Projektanci',
         '01. Gaming': 'Gracze (B2C)',
         '02. Office': 'WFH, MSP & Biura (B2B)'
