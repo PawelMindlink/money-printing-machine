@@ -495,6 +495,16 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
             brand
         ), axis=1
     )
+    df['adset_personas'] = df['creative_context'].apply(bl.map_personas)
+    
+    # Split adset_personas into separate columns for Pivot Table analysis
+    persona_splits = df['adset_personas'].str.split(',', expand=True)
+    for i in range(5):
+        col_name = f'ad_set_{i+1}'
+        if i < len(persona_splits.columns):
+            df[col_name] = persona_splits[i].str.strip()
+        else:
+            df[col_name] = pd.NA
 
     # --- LANDING PAGE NAMING (Part 1) ---
     # Will be applied later after merge, but ensuring columns exist
@@ -922,6 +932,8 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         'calc_net_price', 'calc_bid_cap', 'calc_cost_cap', 'cluster_avg_margin',
         # Ad Context — appended last as enrichment column
         'creative_context',
+        'adset_personas',
+        'ad_set_1', 'ad_set_2', 'ad_set_3', 'ad_set_4', 'ad_set_5'
     ]
     
     
