@@ -312,15 +312,15 @@ def map_personas(mece_category: str) -> str:
         '03. ProGraphic': 'Studia Graficzne & Agencje Reklamowe, Architekci & Projektanci',
         '01. Gaming': 'Gracze (B2C)',
         '02. Office': 'WFH, MSP & Biura (B2B)',
-        '11. Montaż & Akcesoria AV': 'Szerokie Targetowanie (Broad B2B & B2C)',
-        '12. Kable, Adaptery, Folie': 'Szerokie Targetowanie (Broad B2B & B2C)'
+        '11. Montaż & Akcesoria AV': 'Akcesoria & Montaż AV',
+        '12. Kable, Adaptery, Folie': 'Kable, Adaptery, Folie'
     }
     
     for key, output in mapping.items():
         if key in mece_category:
             return output
             
-    return 'Szerokie Targetowanie (Broad B2B & B2C)'
+    return 'Kategoria Domyślna'
 
 
 def calculate_cluster_stats(df, price_col='calc_gross_price', margin_rate_col='base_gross_margin', vat_rate=0.23):
