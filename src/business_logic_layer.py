@@ -173,11 +173,7 @@ def assign_price_cluster(df, price_col='price_numeric', margin_col='base_gross_m
             
         if curr_leader is None:
             curr_leader = price
-            # Calculate Dynamic Threshold based on Leader's margin
-            if margin >= 0.30:
-                curr_threshold = 1.30
-            else:
-                curr_threshold = max(1.10, 1.0 + margin)
+            curr_threshold = 1.20
         
         # Condition: Leader Price must be > threshold_ratio * Product Price to BREAK cluster
         # So we KEEP in cluster if Leader <= threshold_ratio * Product
@@ -187,11 +183,7 @@ def assign_price_cluster(df, price_col='price_numeric', margin_col='base_gross_m
         if price < threshold_price:
             curr_id += 1
             curr_leader = price
-            # Recalculate Dynamic Threshold for new Leader
-            if margin >= 0.30:
-                curr_threshold = 1.30
-            else:
-                curr_threshold = max(1.10, 1.0 + margin)
+            curr_threshold = 1.20
         
         temp_clusters.append(curr_id)
         
@@ -250,7 +242,7 @@ def apply_mece_waterfall(title: str, brand: str) -> str:
             
         # 5. Touch Biurkowy (POS) → Recepcja/hotel/restauracja, montaż na ladzie
         # Musimy wyłapać modele np. t1531sr-b1s, t1634mc-b1s, t2755qsc-b1
-        if any(x in t for x in ['dotykowy', 't15', 't16', 't17', 't19', 't22', 't24', 't27', 'msc', 'mts', 'touch desktop', 'pos touch']):
+        if any(x in t for x in ['dotykowy', 't15', 't16', 't17', 't19', 't22', 't24', 't27', 't32', 't42', 't43', 't55', 't65', 'msc', 'mts', 'touch desktop', 'pos touch', ' p16']):
             return '04. Touch Biurkowy (POS/HoReCa)'
             
         # 6. Touch Open-Frame (Integracja) → Integrator AV, komponent do obudowy, OEM
@@ -258,8 +250,10 @@ def apply_mece_waterfall(title: str, brand: str) -> str:
             return '05. Touch Open-Frame (Integracja OEM)'
             
         # 7. Signage → Marketing/hotel/sklep, wyświetlanie contentu, nie dotykowy
-        if any(x in t for x in [' lh', 'digital signage', 'ds55', 'ds65', 'ds43', 'signage', '24/7', 'brightness 700', 'landscape display', 'commercial display']):
-            return '06. Signage (Digital Out-of-Home)'
+        if any(x in t for x in [' lh', ' le', 'digital signage', 'ds55', 'ds65', 'ds43', 'signage', '24/7', 'brightness 700', 'landscape display', 'commercial display', 'b1ag', 'uchwyt']):
+            # Ensure touch models aren't wrongly caught here
+            if not any(y in t for y in ['dotyk', 'touch', ' te', ' tf', ' t1', ' t2', ' t3', ' t4', ' t5', ' t6']):
+                return '06. Signage (Digital Out-of-Home)'
             
         # 8A. IFP / Tablice Interaktywne EDUKACJA
         if any(x in t for x in ['szkoł', 'szkol', 'edukacj', 'uczeń', 'uczen']) and any(x in t for x in ['te', 'ifp', 'interaktyw']):
@@ -277,17 +271,13 @@ def apply_mece_waterfall(title: str, brand: str) -> str:
         if any(x in t for x in ['wirtualna gazetka', 'digital menu', 'menu board', 'retail solution', 'content management', 'cms screen', 'smart signage software']):
             return '10. Wirtualna Gazetka (Retail HW+SW)'
 
-        # 10. Montaż & Akcesoria AV → Uchwyt/ramię/wózek, zakup uzupełniający
-        if any(x in t for x in ['md-wm', 'omk', 'uchwyt', 'ramię', 'ramie', 'bracket', 'wall mount', 'mounting kit', 'md-wlift', 'wózek', 'wozek', 'trolley', 'floor stand', 'ceiling mount']):
-            return '11. Montaż & Akcesoria AV'
-            
-        # Złączone: Kable, Adaptery, Folie, RODO (zbyt mała kategoria bazowa)
-        if any(x in t for x in ['kabel', 'przewód', 'przewod', 'cable', 'hdmi', 'displayport', 'adapter', 'dp cable', 'usb-c cable', 'stacja dokująca', 'dock', 'folia', 'filtr', 'privacy filter', 'anti-glare film', 'screen protector', 'rodo', 'prywatyzujący', 'matująca']):
-            return '12. Kable, Adaptery, Folie'
+        # 11. Montaż, Akcesoria, Kable & Folie → Uchwyt, kabel, stacja dokująca, zakup uzupełniający
+        if any(x in t for x in ['md-wm', 'omk', 'uchwyt', 'ramię', 'ramie', 'bracket', 'wall mount', 'mounting kit', 'md-wlift', 'wózek', 'wozek', 'trolley', 'floor stand', 'ceiling mount', 'kabel', 'przewód', 'przewod', 'cable', 'hdmi', 'displayport', 'adapter', 'dp cable', 'usb-c cable', 'stacja dokująca', 'dock', 'folia', 'filtr', 'privacy filter', 'anti-glare film', 'screen protector', 'rodo', 'prywatyzujący', 'matująca']):
+            return '11. Montaż, Akcesoria, Kable & Folie'
             
         # 2. Office (ProLite biurowe) → WFH/freelancer/dział IT, zakup racjonalny
         # Catch-all dla flagowej biznesowej i biurowej linii Iiyamy zrzucony na sam koniec
-        if any(x in t for x in ['xub', 'xb', 'x2', 'x3', 'xu', 'b2', 'b3', 'e2', 'e3', 'bu', 'flickerfree', 'usb-c hub', 'docking', 'dual screen', 'ergotilt', 'height adjustable', 'prolite']):
+        if any(x in t for x in ['xub', 'x43', 'xb', 'xcb', 'x2', 'x3', 'xu', 'b19', 'b2', 'b3', 'e19', 'e2', 'e3', 'bu', 'flickerfree', 'usb-c hub', 'docking', 'dual screen', 'ergotilt', 'height adjustable', 'prolite']):
             return '02. Office / Home (ProLite)'
         
     return '00. Catch-All Default'
@@ -312,8 +302,7 @@ def map_personas(mece_category: str) -> str:
         '03. ProGraphic': 'Studia Graficzne & Agencje Reklamowe, Architekci & Projektanci',
         '01. Gaming': 'Gracze (B2C)',
         '02. Office': 'WFH, MSP & Biura (B2B)',
-        '11. Montaż & Akcesoria AV': 'Akcesoria & Montaż AV',
-        '12. Kable, Adaptery, Folie': 'Kable, Adaptery, Folie'
+        '11. Montaż, Akcesoria, Kable & Folie': 'Akcesoria & Kable'
     }
     
     for key, output in mapping.items():
