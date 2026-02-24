@@ -499,7 +499,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     
     # Split adset_personas into separate columns for Pivot Table analysis
     persona_splits = df['adset_personas'].str.split(',', expand=True)
-    for i in range(5):
+    for i in range(8):
         col_name = f'ad_set_{i+1}'
         if i < len(persona_splits.columns):
             df[col_name] = persona_splits[i].str.strip()

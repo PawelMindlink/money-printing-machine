@@ -311,15 +311,16 @@ def map_personas(mece_category: str) -> str:
         '10. Wirtualna Gazetka': 'Gastronomia (QSR), Sklepy Retail',
         '03. ProGraphic': 'Studia Graficzne & Agencje Reklamowe, Architekci & Projektanci',
         '01. Gaming': 'Gracze (B2C)',
-        '02. Office': 'WFH, MSP & Biura (B2B)'
+        '02. Office': 'WFH, MSP & Biura (B2B)',
+        '11. Montaż & Akcesoria AV': 'Szerokie Targetowanie (Broad B2B & B2C)',
+        '12. Kable, Adaptery, Folie': 'Szerokie Targetowanie (Broad B2B & B2C)'
     }
     
-    # Return matched personas, else return empty or default for accessories
     for key, output in mapping.items():
         if key in mece_category:
             return output
             
-    return "Mass Market / Uzupełniające"
+    return 'Szerokie Targetowanie (Broad B2B & B2C)'
 
 
 def calculate_cluster_stats(df, price_col='calc_gross_price', margin_rate_col='base_gross_margin', vat_rate=0.23):
