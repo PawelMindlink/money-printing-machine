@@ -173,7 +173,7 @@ def assign_price_cluster(df, price_col='price_numeric', margin_col='base_gross_m
             
         if curr_leader is None:
             curr_leader = price
-            curr_threshold = 1.20
+            curr_threshold = 1.30
         
         # Condition: Leader Price must be > threshold_ratio * Product Price to BREAK cluster
         # So we KEEP in cluster if Leader <= threshold_ratio * Product
@@ -183,7 +183,7 @@ def assign_price_cluster(df, price_col='price_numeric', margin_col='base_gross_m
         if price < threshold_price:
             curr_id += 1
             curr_leader = price
-            curr_threshold = 1.20
+            curr_threshold = 1.30
         
         temp_clusters.append(curr_id)
         

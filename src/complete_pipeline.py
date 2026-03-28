@@ -933,7 +933,7 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
         # Ad Context — appended last as enrichment column
         'creative_context',
         'adset_personas',
-        'ad_set_1', 'ad_set_2', 'ad_set_3', 'ad_set_4', 'ad_set_5'
+        'ad_set_1', 'ad_set_2', 'ad_set_3', 'ad_set_4', 'ad_set_5', 'ad_set_6', 'ad_set_7', 'ad_set_8'
     ]
     
     
@@ -943,6 +943,20 @@ def run_pipeline(brand, input_dir, output_dir, full_config):
     final_cols = [c for c in final_cols if c in df.columns]
     
     df[final_cols].to_csv(os.path.join(out_dir, f"{brand}_Growth_Opportunities.csv"), index=False)
+    
+    # --- UNPIVOT LOGIC for Pivot Table Analysis ---
+    if 'adset_personas' in df.columns:
+        df_unpivoted = df.copy()
+        df_unpivoted['adset_personas'] = df_unpivoted['adset_personas'].fillna('Brak Persony').astype(str)
+        df_unpivoted['adset_personas'] = df_unpivoted['adset_personas'].apply(lambda x: x if x.strip() else 'Brak Persony')
+        df_unpivoted['ad_set'] = df_unpivoted['adset_personas'].str.split(',')
+        df_unpivoted = df_unpivoted.explode('ad_set')
+        df_unpivoted['ad_set'] = df_unpivoted['ad_set'].astype(str).str.strip()
+        
+        # Remove ad_set_1 to 8 from unpivoted to keep it clean, add the exploded ad_set
+        unpivoted_cols = [c for c in final_cols if not c.startswith('ad_set_')] + ['ad_set']
+        df_unpivoted[unpivoted_cols].to_csv(os.path.join(out_dir, f"{brand}_Growth_Opportunities_Unpivoted.csv"), index=False)
+        
     print(f"Saved Process 2 Output to: {out_dir}")
 
 if __name__ == "__main__":
